@@ -165,12 +165,17 @@ function createTimelineChart(session) {
 
 function generateActionItems(summary) {
   const ranked = Object.entries(summary.averages).sort((a, b) => a[1] - b[1]).slice(0, 3);
-  const items = ranked.map(([category, score]) => {
-    const title = category.charAt(0).toUpperCase() + category.slice(1);
-    return `<strong>${title}</strong> (${score}/10): ${summary.recommendations[category]}`;
-  });
 
-  elements.actionItems.innerHTML = items.map((item) => `<li>${item}</li>`).join('');
+  elements.actionItems.innerHTML = '';
+  ranked.forEach(([category, score]) => {
+    const title = category.charAt(0).toUpperCase() + category.slice(1);
+    const li = document.createElement('li');
+    const strong = document.createElement('strong');
+    strong.textContent = title;
+    li.appendChild(strong);
+    li.appendChild(document.createTextNode(` (${score}/10): ${summary.recommendations[category]}`));
+    elements.actionItems.appendChild(li);
+  });
 }
 
 async function exportAsPdf() {

@@ -9,7 +9,19 @@ import { SEVERITY, TIMING } from '../utils/constants.js';
 
 let currentSession = null;
 let lastNotificationTime = 0;
+let lastErrorNotificationTime = 0;
 let consecutiveWarnings = createWarningTracker();
+let sessionRestored = false;
+
+async function restoreSession() {
+  if (sessionRestored) return;
+  sessionRestored = true;
+
+  const session = await storage.getCurrentSession();
+  if (session && !currentSession) {
+    currentSession = session;
+  }
+}
 
 function createWarningTracker() {
   return {
@@ -183,8 +195,11 @@ async function handleFrameAnalysis(message) {
   } catch (error) {
     console.error('Frame analysis error:', error);
 
+    const now = Date.now();
     const isRateLimit = error.message?.toLowerCase().includes('rate limit');
-    if (!isRateLimit) {
+    const errorCooldownExpired = now - lastErrorNotificationTime > TIMING.NOTIFICATION_COOLDOWN;
+    if (!isRateLimit && errorCooldownExpired) {
+      lastErrorNotificationTime = now;
       showNotification(
         'Analysis Error',
         'Failed to analyze frame. Check your API key, provider, and network connection.',
@@ -235,17 +250,16 @@ async function handleMeetingEnded(message) {
   consecutiveWarnings = createWarningTracker();
 }
 
+// Restore session on every worker wake-up, not just on install/update.
+restoreSession();
+
 chrome.runtime.onInstalled.addListener(async () => {
   await storage.getSettings();
-
-  const session = await storage.getCurrentSession();
-  if (session) {
-    currentSession = session;
-  }
 });
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   (async () => {
+    await restoreSession();
     try {
       switch (message.type) {
         case 'MEETING_STARTED':

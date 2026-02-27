@@ -7,6 +7,8 @@ import { TIMING } from '../utils/constants.js';
 
 let captureInterval = null;
 let isMeetingActive = false;
+let missedFrames = 0;
+const MAX_MISSED_FRAMES = 3;
 
 function findVideoElement() {
   const selectors = [
@@ -54,8 +56,22 @@ function captureFrame(videoElement) {
   }
 }
 
+function safeSendMessage(payload) {
+  try {
+    chrome.runtime.sendMessage(payload, () => {
+      // Ignore response; suppress "message port closed" errors.
+      if (chrome.runtime.lastError) {
+        /* noop */
+      }
+    });
+  } catch {
+    // Extension context invalidated (e.g. extension reloaded/updated).
+    stopMonitoring();
+  }
+}
+
 function sendFrameToBackground(frameData) {
-  chrome.runtime.sendMessage({
+  safeSendMessage({
     type: 'ANALYZE_FRAME',
     frame: frameData,
     timestamp: Date.now(),
@@ -65,10 +81,14 @@ function sendFrameToBackground(frameData) {
 function captureAndSend() {
   const video = findVideoElement();
   if (!video) {
-    stopMonitoring();
+    missedFrames += 1;
+    if (missedFrames >= MAX_MISSED_FRAMES) {
+      stopMonitoring();
+    }
     return;
   }
 
+  missedFrames = 0;
   const frame = captureFrame(video);
   if (frame) {
     sendFrameToBackground(frame);
@@ -82,8 +102,9 @@ function startMonitoring() {
   if (!videoElement) return;
 
   isMeetingActive = true;
+  missedFrames = 0;
 
-  chrome.runtime.sendMessage({
+  safeSendMessage({
     type: 'MEETING_STARTED',
     timestamp: Date.now(),
   });
@@ -104,7 +125,7 @@ function stopMonitoring() {
     captureInterval = null;
   }
 
-  chrome.runtime.sendMessage({
+  safeSendMessage({
     type: 'MEETING_ENDED',
     timestamp: Date.now(),
   });
@@ -113,14 +134,20 @@ function stopMonitoring() {
 }
 
 function observeMeetingState() {
-  const observer = new MutationObserver(() => {
-    const hasVideo = Boolean(findVideoElement());
+  let debounceTimer = null;
 
-    if (hasVideo && !isMeetingActive) {
-      startMonitoring();
-    } else if (!hasVideo && isMeetingActive) {
-      stopMonitoring();
-    }
+  const observer = new MutationObserver(() => {
+    if (debounceTimer) return;
+    debounceTimer = setTimeout(() => {
+      debounceTimer = null;
+      const hasVideo = Boolean(findVideoElement());
+
+      if (hasVideo && !isMeetingActive) {
+        startMonitoring();
+      } else if (!hasVideo && isMeetingActive) {
+        stopMonitoring();
+      }
+    }, 500);
   });
 
   observer.observe(document.body, {
