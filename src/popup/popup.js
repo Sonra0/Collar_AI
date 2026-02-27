@@ -66,15 +66,29 @@ async function loadSettings() {
 }
 
 async function updateStatus() {
-  const currentSession = await storage.getCurrentSession();
-  if (!currentSession) {
+  const runtimeStatus = await new Promise((resolve) => {
+    try {
+      chrome.runtime.sendMessage({ type: 'REQUEST_STATUS' }, (response) => {
+        if (chrome.runtime.lastError) {
+          resolve(null);
+          return;
+        }
+        resolve(response || null);
+      });
+    } catch {
+      resolve(null);
+    }
+  });
+
+  if (!runtimeStatus || !runtimeStatus.active) {
     elements.statusText.textContent = 'Not active';
     elements.statusIndicator.classList.remove('active');
     return;
   }
 
-  const elapsedMin = Math.max(1, Math.round((Date.now() - currentSession.startTime) / 60000));
-  elements.statusText.textContent = `Active for ${elapsedMin} min`;
+  const analyses = Number(runtimeStatus.analyses) || 0;
+  const analysesLabel = analyses === 1 ? '1 analysis' : `${analyses} analyses`;
+  elements.statusText.textContent = `Active · ${analysesLabel}`;
   elements.statusIndicator.classList.add('active');
 }
 

@@ -1,4 +1,5 @@
 import { TIMING } from '../utils/constants.js';
+import { pickBestVideoElement } from './video-selection.mjs';
 
 /**
  * Content script for Google Meet integration.
@@ -18,26 +19,23 @@ function findVideoElement() {
     'div[jsname] video',
   ];
 
+  const candidates = new Set();
+
   for (const selector of selectors) {
     try {
       const videos = document.querySelectorAll(selector);
-
       for (const video of videos) {
-        const ready = video.readyState >= 2;
-        const hasStream = Boolean(video.srcObject) || video.currentTime > 0;
-        const rect = video.getBoundingClientRect();
-        const visible = rect.width > 180 && rect.height > 120;
-
-        if (ready && hasStream && visible) {
-          return video;
-        }
+        candidates.add(video);
       }
     } catch (error) {
       console.warn(`Selector failed: ${selector}`, error);
     }
   }
 
-  return null;
+  const preferred = pickBestVideoElement(candidates);
+  if (preferred) return preferred;
+
+  return pickBestVideoElement(document.querySelectorAll('video'));
 }
 
 function captureFrame(videoElement) {
