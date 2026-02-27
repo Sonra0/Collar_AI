@@ -39,12 +39,87 @@ function extractJson(text) {
  * API client for vision analysis
  */
 class APIClient {
+  constructor() {
+    this.cachedClaudeModel = null;
+  }
+
+  buildClaudeModelCandidates() {
+    const ordered = [
+      this.cachedClaudeModel,
+      API_MODELS.claude,
+      'claude-3-5-sonnet-latest',
+      'claude-3-7-sonnet-latest',
+      'claude-sonnet-4-0',
+      'claude-sonnet-4-20250514',
+    ];
+
+    return ordered.filter((model, index) => model && ordered.indexOf(model) === index);
+  }
+
+  async requestClaudeAnalysis(frame, apiKey, model) {
+    const response = await fetch(API_ENDPOINTS.claude, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        // Required for browser-like runtimes (extensions/service workers).
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 1024,
+        temperature: 0.2,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  media_type: 'image/jpeg',
+                  data: frame.base64,
+                },
+              },
+              {
+                type: 'text',
+                text: ANALYSIS_PROMPT,
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      const message = error?.error?.message || response.statusText;
+      const err = new Error(`Claude API error: ${message}`);
+      err.status = response.status;
+      throw err;
+    }
+
+    const data = await response.json();
+    const analysisText = data.content?.find((entry) => entry.type === 'text')?.text || '';
+    return extractJson(analysisText);
+  }
+
+  shouldRetryClaudeModel(error) {
+    if (!error) return false;
+    const status = Number(error.status) || 0;
+    const message = String(error.message || '').toLowerCase();
+    return status === 400 || status === 404 || message.includes('model');
+  }
+
   async validateClaudeKey(apiKey) {
     const response = await fetch('https://api.anthropic.com/v1/models', {
       method: 'GET',
       headers: {
         'x-api-key': apiKey,
         'anthropic-version': '2023-06-01',
+        // Required for browser-like runtimes (extensions/service workers).
+        'anthropic-dangerous-direct-browser-access': 'true',
       },
     });
 
@@ -81,47 +156,24 @@ class APIClient {
 
   async analyzeWithClaude(frameInput, apiKey) {
     const frame = prepareFrame(frameInput);
+    const models = this.buildClaudeModelCandidates();
+    let lastError = null;
 
-    const response = await fetch(API_ENDPOINTS.claude, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: API_MODELS.claude,
-        max_tokens: 1024,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'image',
-                source: {
-                  type: 'base64',
-                  media_type: 'image/jpeg',
-                  data: frame.base64,
-                },
-              },
-              {
-                type: 'text',
-                text: ANALYSIS_PROMPT,
-              },
-            ],
-          },
-        ],
-      }),
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(`Claude API error: ${error.error?.message || response.statusText}`);
+    for (const model of models) {
+      try {
+        const result = await this.requestClaudeAnalysis(frame, apiKey, model);
+        this.cachedClaudeModel = model;
+        return result;
+      } catch (error) {
+        lastError = error;
+        if (!this.shouldRetryClaudeModel(error)) {
+          throw error;
+        }
+      }
     }
 
-    const data = await response.json();
-    const analysisText = data.content?.find((entry) => entry.type === 'text')?.text || '';
-    return extractJson(analysisText);
+    if (lastError) throw lastError;
+    throw new Error('Claude API error: no compatible model available');
   }
 
   async analyzeWithOpenAI(frameInput, apiKey) {
@@ -135,6 +187,7 @@ class APIClient {
       },
       body: JSON.stringify({
         model: API_MODELS.openai,
+        temperature: 0.2,
         messages: [
           {
             role: 'user',
@@ -162,7 +215,15 @@ class APIClient {
     }
 
     const data = await response.json();
-    const analysisText = data.choices?.[0]?.message?.content || '';
+    const rawContent = data.choices?.[0]?.message?.content;
+    const analysisText = Array.isArray(rawContent)
+      ? rawContent
+        .map((part) => {
+          if (typeof part === 'string') return part;
+          return part?.text || '';
+        })
+        .join('\n')
+      : (rawContent || '');
     return extractJson(analysisText);
   }
 
