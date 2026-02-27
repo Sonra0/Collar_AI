@@ -7,9 +7,11 @@ import { pickBestVideoElement } from './video-selection.mjs';
  */
 
 let captureInterval = null;
+let readinessPollInterval = null;
 let isMeetingActive = false;
 let missedFrames = 0;
 const MAX_MISSED_FRAMES = 3;
+const READINESS_POLL_INTERVAL = 2000;
 
 function findVideoElement() {
   const selectors = [
@@ -102,6 +104,11 @@ function startMonitoring() {
   isMeetingActive = true;
   missedFrames = 0;
 
+  if (readinessPollInterval) {
+    clearInterval(readinessPollInterval);
+    readinessPollInterval = null;
+  }
+
   safeSendMessage({
     type: 'MEETING_STARTED',
     timestamp: Date.now(),
@@ -133,6 +140,17 @@ function stopMonitoring() {
 
 function observeMeetingState() {
   let debounceTimer = null;
+
+  const probeForReadyVideo = () => {
+    if (isMeetingActive) return;
+    if (findVideoElement()) {
+      startMonitoring();
+    }
+  };
+
+  if (!readinessPollInterval) {
+    readinessPollInterval = setInterval(probeForReadyVideo, READINESS_POLL_INTERVAL);
+  }
 
   const observer = new MutationObserver(() => {
     if (debounceTimer) return;
@@ -184,6 +202,12 @@ function init() {
   }
 
   window.addEventListener('beforeunload', stopMonitoring);
+  window.addEventListener('beforeunload', () => {
+    if (readinessPollInterval) {
+      clearInterval(readinessPollInterval);
+      readinessPollInterval = null;
+    }
+  });
   console.log('Meeting Body Language Coach: content script loaded');
 }
 
