@@ -69,6 +69,7 @@ class APIClient {
       body: JSON.stringify({
         model,
         max_tokens: 1024,
+        temperature: 0.2,
         messages: [
           {
             role: 'user',
@@ -186,6 +187,7 @@ class APIClient {
       },
       body: JSON.stringify({
         model: API_MODELS.openai,
+        temperature: 0.2,
         messages: [
           {
             role: 'user',

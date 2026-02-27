@@ -40,14 +40,23 @@ function findVideoElement() {
 
 function captureFrame(videoElement) {
   try {
+    const sourceWidth = Number(videoElement.videoWidth) || 640;
+    const sourceHeight = Number(videoElement.videoHeight) || 480;
+    const longestSide = Math.max(sourceWidth, sourceHeight);
+    const scale = longestSide > 960 ? 960 / longestSide : 1;
+    const targetWidth = Math.max(320, Math.round(sourceWidth * scale));
+    const targetHeight = Math.max(240, Math.round(sourceHeight * scale));
+
     const canvas = document.createElement('canvas');
-    canvas.width = 640;
-    canvas.height = 480;
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
 
     const context = canvas.getContext('2d');
-    context.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = 'high';
+    context.drawImage(videoElement, 0, 0, targetWidth, targetHeight);
 
-    return canvas.toDataURL('image/jpeg', 0.8);
+    return canvas.toDataURL('image/jpeg', 0.9);
   } catch (error) {
     console.error('Frame capture error:', error);
     return null;

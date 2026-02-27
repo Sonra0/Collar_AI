@@ -1,6 +1,7 @@
 import storage from '../utils/storage.js';
 import api from '../utils/api.js';
 import { SEVERITY, TIMING } from '../utils/constants.js';
+import { extractPrioritySuggestions } from '../utils/suggestions.mjs';
 
 /**
  * Background service worker.
@@ -184,7 +185,7 @@ function checkForIssues(analysis, settings) {
   }
 
   if (criticalIssues.length > 0) {
-    const suggestions = criticalIssues.map((issue) => issue.suggestion).filter(Boolean);
+    const suggestions = extractPrioritySuggestions(analysis, criticalIssues, 2);
     const message = suggestions.length
       ? suggestions.join('; ')
       : 'Critical body language issue detected.';
@@ -195,7 +196,7 @@ function checkForIssues(analysis, settings) {
   }
 
   if (warningIssues.length > 0) {
-    const suggestions = warningIssues.map((issue) => issue.suggestion).filter(Boolean);
+    const suggestions = extractPrioritySuggestions(analysis, warningIssues, 2);
     const message = suggestions.length
       ? suggestions.join('; ')
       : 'Body language needs improvement.';
