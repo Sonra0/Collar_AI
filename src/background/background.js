@@ -12,6 +12,7 @@ let lastNotificationTime = 0;
 let lastErrorNotificationTime = 0;
 let consecutiveWarnings = createWarningTracker();
 let sessionRestored = false;
+let analysisRuntime = createAnalysisRuntime();
 
 async function restoreSession() {
   if (sessionRestored) return;
@@ -30,6 +31,42 @@ function createWarningTracker() {
     hands: 0,
     appearance: 0,
   };
+}
+
+function createAnalysisRuntime() {
+  return {
+    attempted: 0,
+    succeeded: 0,
+    failed: 0,
+    lastAttemptAt: null,
+    lastSuccessAt: null,
+    lastFailureAt: null,
+    lastError: null,
+  };
+}
+
+function markAnalysisFailure(errorMessage) {
+  analysisRuntime.failed += 1;
+  analysisRuntime.lastFailureAt = Date.now();
+  analysisRuntime.lastError = errorMessage || 'Unknown analysis error';
+}
+
+function normalizeScore(rawScore) {
+  if (typeof rawScore === 'number' && Number.isFinite(rawScore)) {
+    return rawScore;
+  }
+
+  if (typeof rawScore === 'string') {
+    const match = rawScore.match(/-?\d+(\.\d+)?/);
+    if (match) {
+      const parsed = Number(match[0]);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+  }
+
+  return Number.NaN;
 }
 
 function getSensitivityThresholds(sensitivity) {
@@ -63,7 +100,10 @@ function validateAnalysis(analysis) {
 
   const categories = ['posture', 'facial', 'hands', 'appearance'];
   return categories.every((category) => {
-    const score = Number(analysis[category]?.score);
+    const score = normalizeScore(analysis[category]?.score);
+    if (Number.isFinite(score)) {
+      analysis[category].score = score;
+    }
     return Number.isFinite(score) && score >= 0 && score <= 10;
   });
 }
@@ -95,6 +135,7 @@ async function handleMeetingStarted(message) {
     noKeyWarningShown: false,
   };
 
+  analysisRuntime = createAnalysisRuntime();
   consecutiveWarnings = createWarningTracker();
   await storage.saveCurrentSession(currentSession);
 
@@ -171,8 +212,11 @@ async function handleFrameAnalysis(message) {
 
   try {
     const settings = await storage.getSettings();
+    analysisRuntime.attempted += 1;
+    analysisRuntime.lastAttemptAt = Date.now();
 
     if (!settings.apiKey) {
+      markAnalysisFailure('API key missing in saved settings');
       if (!currentSession.noKeyWarningShown) {
         showNotification('Setup Required', 'Please add your API key in the extension popup.', 1);
         currentSession.noKeyWarningShown = true;
@@ -189,11 +233,15 @@ async function handleFrameAnalysis(message) {
 
     analysis.timestamp = message.timestamp || Date.now();
     currentSession.analyses.push(analysis);
+    analysisRuntime.succeeded += 1;
+    analysisRuntime.lastSuccessAt = Date.now();
+    analysisRuntime.lastError = null;
 
     await storage.saveCurrentSession(currentSession);
     checkForIssues(analysis, settings);
   } catch (error) {
     console.error('Frame analysis error:', error);
+    markAnalysisFailure(error.message);
 
     const now = Date.now();
     const isRateLimit = error.message?.toLowerCase().includes('rate limit');
@@ -275,12 +323,18 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           sendResponse({ ok: true });
           return;
         case 'REQUEST_STATUS':
-          sendResponse({
-            active: Boolean(currentSession),
-            sessionId: currentSession?.id || null,
-            analyses: currentSession?.analyses?.length || 0,
-          });
-          return;
+          {
+            const settings = await storage.getSettings();
+            sendResponse({
+              active: Boolean(currentSession),
+              sessionId: currentSession?.id || null,
+              analyses: currentSession?.analyses?.length || 0,
+              apiConfigured: Boolean(settings.apiKey),
+              apiProvider: settings.apiProvider,
+              analysisRuntime: { ...analysisRuntime },
+            });
+            return;
+          }
         default:
           sendResponse({ ok: false, error: 'Unknown message type' });
       }
