@@ -12,6 +12,8 @@ const elements = {
   retentionDays: document.getElementById('retention-days'),
   ephemeralMode: document.getElementById('ephemeral-mode'),
   saveSettings: document.getElementById('save-settings'),
+  monitoringToggle: document.getElementById('monitoring-toggle'),
+  liveCoaching: document.getElementById('live-coaching'),
   viewHistory: document.getElementById('view-history'),
   clearData: document.getElementById('clear-data'),
   providerPill: document.getElementById('provider-pill'),
@@ -19,6 +21,7 @@ const elements = {
 };
 
 let toastTimeout = null;
+let monitoringEnabled = true;
 
 function showToast(message, type = 'info') {
   elements.toast.textContent = message;
@@ -53,7 +56,20 @@ function syncPrivacyControls() {
   elements.retentionDays.style.opacity = isEphemeral ? '0.6' : '1';
 }
 
+function syncMonitoringToggleButton() {
+  elements.monitoringToggle.textContent = monitoringEnabled ? 'Turn monitoring off' : 'Turn monitoring on';
+  elements.monitoringToggle.classList.toggle('on-state', !monitoringEnabled);
+}
+
 function formatRuntimeStatus(runtimeStatus) {
+  if (runtimeStatus.monitoringEnabled === false) {
+    return 'Monitoring is OFF';
+  }
+
+  if (runtimeStatus.notificationsEnabled && runtimeStatus.notificationPermission === 'denied') {
+    return 'Active · notifications blocked';
+  }
+
   const analyses = Number(runtimeStatus.analyses) || 0;
   const analysesLabel = analyses === 1 ? '1 analysis' : `${analyses} analyses`;
   if (analyses > 0) {
@@ -82,6 +98,8 @@ async function loadSettings() {
   elements.notificationsEnabled.checked = settings.notificationsEnabled;
   elements.retentionDays.value = settings.dataRetentionDays;
   elements.ephemeralMode.checked = settings.ephemeralMode;
+  monitoringEnabled = settings.monitoringEnabled !== false;
+  syncMonitoringToggleButton();
   elements.providerPill.textContent = providerName(settings.apiProvider);
   syncPrivacyControls();
 }
@@ -101,7 +119,21 @@ async function updateStatus() {
     }
   });
 
-  if (!runtimeStatus || !runtimeStatus.active) {
+  if (!runtimeStatus) {
+    elements.statusText.textContent = 'Not active';
+    elements.statusText.removeAttribute('title');
+    elements.statusIndicator.classList.remove('active');
+    return;
+  }
+
+  if (runtimeStatus.monitoringEnabled === false) {
+    elements.statusText.textContent = 'Monitoring is OFF';
+    elements.statusText.removeAttribute('title');
+    elements.statusIndicator.classList.remove('active');
+    return;
+  }
+
+  if (!runtimeStatus.active) {
     elements.statusText.textContent = 'Not active';
     elements.statusText.removeAttribute('title');
     elements.statusIndicator.classList.remove('active');
@@ -124,6 +156,7 @@ async function persistSettings() {
   const settings = {
     apiProvider: elements.apiProvider.value,
     apiKey: elements.apiKey.value.trim(),
+    monitoringEnabled,
     sensitivity: elements.sensitivity.value,
     notificationsEnabled: elements.notificationsEnabled.checked,
     dataRetentionDays: retentionDays,
@@ -135,6 +168,25 @@ async function persistSettings() {
   syncPrivacyControls();
   elements.providerPill.textContent = providerName(settings.apiProvider);
   return settings;
+}
+
+async function toggleMonitoring() {
+  monitoringEnabled = !monitoringEnabled;
+  syncMonitoringToggleButton();
+  await persistSettings();
+
+  try {
+    await new Promise((resolve) => {
+      chrome.runtime.sendMessage({ type: 'SET_MONITORING', enabled: monitoringEnabled }, () => {
+        resolve();
+      });
+    });
+  } catch {
+    // Fallback to local setting only.
+  }
+
+  await updateStatus();
+  showToast(monitoringEnabled ? 'Monitoring turned on.' : 'Monitoring turned off.');
 }
 
 async function saveSettings() {
@@ -172,6 +224,20 @@ function viewHistory() {
   });
 }
 
+function openLiveCoaching() {
+  const url = chrome.runtime.getURL('live/live.html');
+  try {
+    chrome.windows.create({
+      url,
+      type: 'popup',
+      width: 460,
+      height: 760,
+    });
+  } catch {
+    chrome.tabs.create({ url });
+  }
+}
+
 async function clearAllData() {
   const approved = window.confirm('Clear settings and all saved sessions? This cannot be undone.');
   if (!approved) return;
@@ -184,6 +250,8 @@ async function clearAllData() {
 
 elements.saveSettings.addEventListener('click', saveSettings);
 elements.validateKey.addEventListener('click', validateApiKey);
+elements.monitoringToggle.addEventListener('click', toggleMonitoring);
+elements.liveCoaching.addEventListener('click', openLiveCoaching);
 elements.viewHistory.addEventListener('click', viewHistory);
 elements.clearData.addEventListener('click', clearAllData);
 elements.apiProvider.addEventListener('change', () => {

@@ -30,7 +30,7 @@ export const SEVERITY = {
 // Analysis timing
 export const TIMING = {
   CAPTURE_INTERVAL: 30000,
-  CONSECUTIVE_WARNINGS: 2,
+  CONSECUTIVE_WARNINGS: 1,
   NOTIFICATION_COOLDOWN: 120000,
 };
 
@@ -40,12 +40,17 @@ export const STORAGE_KEYS = {
   SESSIONS: 'sessions',
   CURRENT_SESSION: 'currentSession',
   SUMMARY_SESSION: 'summarySession',
+  LIVE_COACHING_FEED: 'liveCoachingFeed',
 };
+
+export const LIVE_COACHING_MAX_ITEMS = 200;
+export const LOCAL_FRAME_RECORDER_ENDPOINT = 'http://127.0.0.1:3131/save-frame';
 
 // Default settings
 export const DEFAULT_SETTINGS = {
   apiProvider: 'claude',
   apiKey: '',
+  monitoringEnabled: true,
   sensitivity: 'medium',
   notificationsEnabled: true,
   dataRetentionDays: 7,

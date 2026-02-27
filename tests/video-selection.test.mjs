@@ -79,3 +79,22 @@ test('prefers a live camera stream over playback-only video', () => {
   const selected = pickBestVideoElement([playbackOnly, liveCamera]);
   assert.equal(selected, liveCamera);
 });
+
+test('prefers camera stream over active screen-share stream', () => {
+  const screenShare = createVideo({
+    width: 1280,
+    height: 720,
+    readyState: 4,
+    srcObject: createStream({ label: 'Screen 1' }),
+  });
+
+  const liveCamera = createVideo({
+    width: 160,
+    height: 90,
+    readyState: 4,
+    srcObject: createStream({ label: 'Integrated Camera' }),
+  });
+
+  const selected = pickBestVideoElement([screenShare, liveCamera]);
+  assert.equal(selected, liveCamera);
+});
