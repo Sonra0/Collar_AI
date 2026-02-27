@@ -66,6 +66,7 @@ npm run build
 ```bash
 npm run build
 npm run dev
+npm run frame-recorder
 npm run lint
 npm run format
 ```
@@ -82,6 +83,11 @@ src/
 ```
 
 ## Troubleshooting
+
+### Save captured frames to project folder
+- Run `npm run frame-recorder` from the project root.
+- This starts a local server at `http://127.0.0.1:3131` and saves frames to `pictures/`.
+- Keep it running while the extension is active.
 
 ### Extension not detecting meeting video
 - Confirm camera is enabled in Google Meet.

@@ -1,6 +1,11 @@
 import storage from '../utils/storage.js';
 import api from '../utils/api.js';
-import { SEVERITY, TIMING } from '../utils/constants.js';
+import {
+  LIVE_COACHING_MAX_ITEMS,
+  LOCAL_FRAME_RECORDER_ENDPOINT,
+  SEVERITY,
+  TIMING,
+} from '../utils/constants.js';
 import { extractPrioritySuggestions } from '../utils/suggestions.mjs';
 
 /**
@@ -11,6 +16,8 @@ import { extractPrioritySuggestions } from '../utils/suggestions.mjs';
 let currentSession = null;
 let lastNotificationTime = 0;
 let lastErrorNotificationTime = 0;
+let lastFrameRecorderErrorTime = 0;
+let frameRecorderConnected = true;
 let consecutiveWarnings = createWarningTracker();
 let sessionRestored = false;
 let analysisRuntime = createAnalysisRuntime();
@@ -80,19 +87,142 @@ function getSensitivityThresholds(sensitivity) {
   }
 
   // medium
-  return { critical: SEVERITY.CRITICAL, warning: 6 };
+  return { critical: SEVERITY.CRITICAL, warning: SEVERITY.WARNING };
 }
 
-function showNotification(title, message, priority = 1, idPrefix = 'coach') {
-  const notificationId = `${idPrefix}-${Date.now()}`;
+async function getNotificationPermissionLevel() {
+  return new Promise((resolve) => {
+    try {
+      chrome.notifications.getPermissionLevel((level) => {
+        if (chrome.runtime.lastError) {
+          resolve('unknown');
+          return;
+        }
+        resolve(level || 'unknown');
+      });
+    } catch {
+      resolve('unknown');
+    }
+  });
+}
 
-  chrome.notifications.create(notificationId, {
-    type: 'basic',
-    iconUrl: 'icons/icon128.png',
-    title,
-    message,
-    priority,
-    requireInteraction: false,
+async function appendLiveCoachingItem(entry) {
+  try {
+    const current = await storage.getLiveCoachingFeed();
+    const next = [entry, ...current].slice(0, LIVE_COACHING_MAX_ITEMS);
+    await storage.saveLiveCoachingFeed(next);
+  } catch (error) {
+    console.warn('Failed to append live coaching item:', error);
+  }
+}
+
+async function saveFrameToLocalProjectFolder(frameData, sessionId, timestamp) {
+  try {
+    const response = await fetch(LOCAL_FRAME_RECORDER_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        frameData,
+        sessionId,
+        timestamp,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Recorder responded with ${response.status}`);
+    }
+
+    if (!frameRecorderConnected) {
+      frameRecorderConnected = true;
+      await appendLiveCoachingItem({
+        id: `frame-recorder-restored-${Date.now()}`,
+        title: 'Picture Saver Connected',
+        message: 'Frames are being saved to project folder: pictures/',
+        category: 'system',
+        timestamp: Date.now(),
+        delivery: 'in-app',
+      });
+    }
+  } catch (error) {
+    const now = Date.now();
+    const shouldReport = now - lastFrameRecorderErrorTime > 120000;
+    if (shouldReport) {
+      lastFrameRecorderErrorTime = now;
+      frameRecorderConnected = false;
+      await appendLiveCoachingItem({
+        id: `frame-recorder-error-${now}`,
+        title: 'Picture Saver Offline',
+        message: 'Run `npm run frame-recorder` to save camera pictures into project/pictures.',
+        category: 'system',
+        timestamp: now,
+        delivery: 'in-app',
+      });
+    }
+    console.warn('Local frame recorder unavailable:', error);
+  }
+}
+
+async function showNotification(title, message, priority = 1, idPrefix = 'coach', options = {}) {
+  const { recordToFeed = true, category = 'info' } = options;
+  const permission = await getNotificationPermissionLevel();
+  const timestamp = Date.now();
+
+  if (permission === 'denied') {
+    analysisRuntime.lastError = 'Chrome notifications are blocked for this extension';
+    if (recordToFeed) {
+      await appendLiveCoachingItem({
+        id: `${idPrefix}-${timestamp}`,
+        title,
+        message,
+        category,
+        timestamp,
+        delivery: 'blocked',
+      });
+    }
+    return false;
+  }
+
+  const notificationId = `${idPrefix}-${timestamp}`;
+  return new Promise((resolve) => {
+    chrome.notifications.create(notificationId, {
+      type: 'basic',
+      iconUrl: 'icons/icon128.png',
+      title,
+      message,
+      priority,
+      requireInteraction: false,
+    }, (id) => {
+      if (chrome.runtime.lastError) {
+        analysisRuntime.lastError = `Notification failed: ${chrome.runtime.lastError.message}`;
+        if (recordToFeed) {
+          appendLiveCoachingItem({
+            id: notificationId,
+            title,
+            message,
+            category,
+            timestamp,
+            delivery: 'failed',
+          }).finally(() => resolve(false));
+          return;
+        }
+        resolve(false);
+        return;
+      }
+      if (recordToFeed) {
+        appendLiveCoachingItem({
+          id: notificationId,
+          title,
+          message,
+          category,
+          timestamp,
+          delivery: 'shown',
+        }).finally(() => resolve(Boolean(id)));
+        return;
+      }
+      resolve(Boolean(id));
+    });
   });
 }
 
@@ -126,6 +256,11 @@ async function handleMeetingStarted(message) {
     return;
   }
 
+  const settings = await storage.getSettings();
+  if (settings.monitoringEnabled === false) {
+    return;
+  }
+
   await storage.clearSummarySession();
 
   currentSession = {
@@ -139,11 +274,19 @@ async function handleMeetingStarted(message) {
   analysisRuntime = createAnalysisRuntime();
   consecutiveWarnings = createWarningTracker();
   await storage.saveCurrentSession(currentSession);
+  await appendLiveCoachingItem({
+    id: `meeting-start-${message.timestamp}`,
+    title: 'Meeting Monitoring Started',
+    message: 'Live coaching is now tracking your meeting.',
+    category: 'system',
+    timestamp: message.timestamp,
+    delivery: 'in-app',
+  });
 
   console.log('Meeting started:', currentSession.id);
 }
 
-function checkForIssues(analysis, settings) {
+async function checkForIssues(analysis, settings) {
   const categories = ['posture', 'facial', 'hands', 'appearance'];
   const criticalIssues = [];
   const warningIssues = [];
@@ -174,15 +317,8 @@ function checkForIssues(analysis, settings) {
     consecutiveWarnings[category] = 0;
   });
 
-  if (!settings.notificationsEnabled) {
-    return;
-  }
-
   const now = Date.now();
   const cooldownExpired = now - lastNotificationTime > TIMING.NOTIFICATION_COOLDOWN;
-  if (!cooldownExpired) {
-    return;
-  }
 
   if (criticalIssues.length > 0) {
     const suggestions = extractPrioritySuggestions(analysis, criticalIssues, 2);
@@ -190,8 +326,26 @@ function checkForIssues(analysis, settings) {
       ? suggestions.join('; ')
       : 'Critical body language issue detected.';
 
-    showNotification('Critical Body Language Alert', message, 2);
-    lastNotificationTime = now;
+    await appendLiveCoachingItem({
+      id: `critical-${now}`,
+      title: 'Critical Body Language Alert',
+      message,
+      category: 'critical',
+      timestamp: now,
+      delivery: 'in-app',
+    });
+
+    if (!settings.notificationsEnabled || !cooldownExpired) {
+      return;
+    }
+
+    const shown = await showNotification('Critical Body Language Alert', message, 2, 'coach', {
+      recordToFeed: false,
+      category: 'critical',
+    });
+    if (shown) {
+      lastNotificationTime = now;
+    }
     return;
   }
 
@@ -201,8 +355,26 @@ function checkForIssues(analysis, settings) {
       ? suggestions.join('; ')
       : 'Body language needs improvement.';
 
-    showNotification('Body Language Tip', message, 1);
-    lastNotificationTime = now;
+    await appendLiveCoachingItem({
+      id: `warning-${now}`,
+      title: 'Body Language Tip',
+      message,
+      category: 'warning',
+      timestamp: now,
+      delivery: 'in-app',
+    });
+
+    if (!settings.notificationsEnabled || !cooldownExpired) {
+      return;
+    }
+
+    const shown = await showNotification('Body Language Tip', message, 1, 'coach', {
+      recordToFeed: false,
+      category: 'warning',
+    });
+    if (shown) {
+      lastNotificationTime = now;
+    }
   }
 }
 
@@ -213,18 +385,26 @@ async function handleFrameAnalysis(message) {
 
   try {
     const settings = await storage.getSettings();
+    if (settings.monitoringEnabled === false) {
+      return;
+    }
+
     analysisRuntime.attempted += 1;
     analysisRuntime.lastAttemptAt = Date.now();
 
     if (!settings.apiKey) {
       markAnalysisFailure('API key missing in saved settings');
       if (!currentSession.noKeyWarningShown) {
-        showNotification('Setup Required', 'Please add your API key in the extension popup.', 1);
+        await showNotification('Setup Required', 'Please add your API key in the extension popup.', 1, 'coach', {
+          category: 'error',
+        });
         currentSession.noKeyWarningShown = true;
         await storage.saveCurrentSession(currentSession);
       }
       return;
     }
+
+    void saveFrameToLocalProjectFolder(message.frame, currentSession?.id || 'session', message.timestamp || Date.now());
 
     const analysis = await api.analyze(message.frame, settings.apiKey, settings.apiProvider);
 
@@ -239,7 +419,7 @@ async function handleFrameAnalysis(message) {
     analysisRuntime.lastError = null;
 
     await storage.saveCurrentSession(currentSession);
-    checkForIssues(analysis, settings);
+    await checkForIssues(analysis, settings);
   } catch (error) {
     console.error('Frame analysis error:', error);
     markAnalysisFailure(error.message);
@@ -249,13 +429,67 @@ async function handleFrameAnalysis(message) {
     const errorCooldownExpired = now - lastErrorNotificationTime > TIMING.NOTIFICATION_COOLDOWN;
     if (!isRateLimit && errorCooldownExpired) {
       lastErrorNotificationTime = now;
-      showNotification(
+      await showNotification(
         'Analysis Error',
         'Failed to analyze frame. Check your API key, provider, and network connection.',
         1,
+        'coach',
+        { category: 'error' },
       );
     }
   }
+}
+
+async function stopCurrentSessionSilently(endTimestamp = Date.now()) {
+  if (!currentSession) {
+    await storage.clearCurrentSession();
+    return;
+  }
+
+  currentSession.endTime = endTimestamp;
+  const settings = await storage.getSettings();
+  const hasData = currentSession.analyses.length > 0;
+
+  if (hasData) {
+    await storage.saveSummarySession(currentSession);
+    if (!settings.ephemeralMode) {
+      await storage.addSession(currentSession);
+      await applyDataRetention(settings.dataRetentionDays);
+    }
+  } else {
+    await storage.clearSummarySession();
+  }
+
+  await storage.clearCurrentSession();
+  currentSession = null;
+  consecutiveWarnings = createWarningTracker();
+}
+
+async function handleMonitoringToggle(enabled) {
+  await storage.saveSettings({ monitoringEnabled: enabled });
+
+  if (!enabled) {
+    await stopCurrentSessionSilently();
+    await appendLiveCoachingItem({
+      id: `monitoring-off-${Date.now()}`,
+      title: 'Monitoring Turned Off',
+      message: 'Live coaching is paused until you turn it back on.',
+      category: 'system',
+      timestamp: Date.now(),
+      delivery: 'in-app',
+    });
+  } else {
+    await appendLiveCoachingItem({
+      id: `monitoring-on-${Date.now()}`,
+      title: 'Monitoring Turned On',
+      message: 'Open Google Meet to resume live coaching.',
+      category: 'system',
+      timestamp: Date.now(),
+      delivery: 'in-app',
+    });
+  }
+
+  return { ok: true, monitoringEnabled: enabled };
 }
 
 async function handleMeetingEnded(message) {
@@ -277,6 +511,7 @@ async function handleMeetingEnded(message) {
     await storage.clearSummarySession();
   }
 
+  const endedAt = currentSession.endTime;
   await storage.clearCurrentSession();
 
   if (hasData) {
@@ -285,11 +520,12 @@ async function handleMeetingEnded(message) {
       Math.round((currentSession.endTime - currentSession.startTime) / 1000 / 60),
     );
 
-    showNotification(
+    await showNotification(
       'Meeting Ended',
       `${durationMin} minutes monitored. Opening summary report.`,
       1,
       'summary-ready',
+      { category: 'system' },
     );
 
     chrome.tabs.create({ url: chrome.runtime.getURL('summary/summary.html') });
@@ -297,6 +533,14 @@ async function handleMeetingEnded(message) {
 
   currentSession = null;
   consecutiveWarnings = createWarningTracker();
+  await appendLiveCoachingItem({
+    id: `meeting-end-${endedAt}`,
+    title: 'Meeting Monitoring Ended',
+    message: hasData ? 'Summary report is ready.' : 'No analyzable frames captured this session.',
+    category: 'system',
+    timestamp: endedAt,
+    delivery: 'in-app',
+  });
 }
 
 // Restore session on every worker wake-up, not just on install/update.
@@ -323,15 +567,22 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           await handleMeetingEnded(message);
           sendResponse({ ok: true });
           return;
+        case 'SET_MONITORING':
+          sendResponse(await handleMonitoringToggle(Boolean(message.enabled)));
+          return;
         case 'REQUEST_STATUS':
           {
             const settings = await storage.getSettings();
+            const monitoringEnabled = settings.monitoringEnabled !== false;
             sendResponse({
-              active: Boolean(currentSession),
+              active: monitoringEnabled && Boolean(currentSession),
               sessionId: currentSession?.id || null,
               analyses: currentSession?.analyses?.length || 0,
               apiConfigured: Boolean(settings.apiKey),
               apiProvider: settings.apiProvider,
+              monitoringEnabled,
+              notificationsEnabled: settings.notificationsEnabled !== false,
+              notificationPermission: await getNotificationPermissionLevel(),
               analysisRuntime: { ...analysisRuntime },
             });
             return;

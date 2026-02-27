@@ -264,6 +264,26 @@ select:focus {
   background: rgba(255, 114, 114, 0.23);
 }
 
+.btn.warning {
+  background: rgba(255, 199, 106, 0.18);
+  color: #ffe7bb;
+  border-color: rgba(255, 206, 125, 0.42);
+}
+
+.btn.warning:hover {
+  background: rgba(255, 199, 106, 0.27);
+}
+
+.btn.warning.on-state {
+  background: rgba(92, 225, 195, 0.22);
+  color: #d6fff5;
+  border-color: rgba(122, 238, 212, 0.5);
+}
+
+.btn.warning.on-state:hover {
+  background: rgba(92, 225, 195, 0.3);
+}
+
 .action-grid {
   display: grid;
   gap: 9px;

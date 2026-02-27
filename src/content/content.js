@@ -10,12 +10,14 @@ let captureInterval = null;
 let readinessPollInterval = null;
 let isMeetingActive = false;
 let missedFrames = 0;
+let monitoringEnabled = true;
 const MAX_MISSED_FRAMES = 3;
 const READINESS_POLL_INTERVAL = 2000;
+const SETTINGS_KEY = 'settings';
 
 function probeForReadyVideo() {
   if (isMeetingActive) return;
-  if (findVideoElement()) {
+  if (monitoringEnabled && findVideoElement()) {
     startMonitoring();
   }
 }
@@ -31,17 +33,62 @@ function stopReadinessPolling() {
   readinessPollInterval = null;
 }
 
+function parseMonitoringEnabled(settings) {
+  return settings?.monitoringEnabled !== false;
+}
+
+async function syncMonitoringPreference() {
+  try {
+    const result = await chrome.storage.local.get(SETTINGS_KEY);
+    const previous = monitoringEnabled;
+    monitoringEnabled = parseMonitoringEnabled(result?.[SETTINGS_KEY]);
+
+    if (!monitoringEnabled && isMeetingActive) {
+      stopMonitoring();
+      return;
+    }
+
+    if (monitoringEnabled && !previous && !isMeetingActive && findVideoElement()) {
+      startMonitoring();
+    }
+  } catch {
+    monitoringEnabled = true;
+  }
+}
+
 function findVideoElement() {
-  const selectors = [
+  const preferredSelectors = [
+    'div[data-self-video="true"] video',
+    'video[data-self-video="true"]',
+    '[data-is-self="true"] video',
+    '[data-local-participant="true"] video',
+    '[data-self-name] video',
+  ];
+
+  const generalSelectors = [
     'video[autoplay]',
     'video.participant-video',
-    'div[data-self-video="true"] video',
     'div[jsname] video',
   ];
 
+  const preferredCandidates = new Set();
+  for (const selector of preferredSelectors) {
+    try {
+      const videos = document.querySelectorAll(selector);
+      for (const video of videos) {
+        preferredCandidates.add(video);
+      }
+    } catch (error) {
+      console.warn(`Selector failed: ${selector}`, error);
+    }
+  }
+
+  const preferred = pickBestVideoElement(preferredCandidates);
+  if (preferred) return preferred;
+
   const candidates = new Set();
 
-  for (const selector of selectors) {
+  for (const selector of generalSelectors) {
     try {
       const videos = document.querySelectorAll(selector);
       for (const video of videos) {
@@ -52,8 +99,8 @@ function findVideoElement() {
     }
   }
 
-  const preferred = pickBestVideoElement(candidates);
-  if (preferred) return preferred;
+  const bestCandidate = pickBestVideoElement(candidates);
+  if (bestCandidate) return bestCandidate;
 
   return pickBestVideoElement(document.querySelectorAll('video'));
 }
@@ -106,6 +153,11 @@ function sendFrameToBackground(frameData) {
 }
 
 function captureAndSend() {
+  if (!monitoringEnabled) {
+    stopMonitoring();
+    return;
+  }
+
   const video = findVideoElement();
   if (!video) {
     missedFrames += 1;
@@ -123,7 +175,7 @@ function captureAndSend() {
 }
 
 function startMonitoring() {
-  if (isMeetingActive) return;
+  if (isMeetingActive || !monitoringEnabled) return;
 
   const videoElement = findVideoElement();
   if (!videoElement) return;
@@ -173,7 +225,7 @@ function observeMeetingState() {
       debounceTimer = null;
       const hasVideo = Boolean(findVideoElement());
 
-      if (hasVideo && !isMeetingActive) {
+      if (hasVideo && !isMeetingActive && monitoringEnabled) {
         startMonitoring();
       } else if (!hasVideo && isMeetingActive) {
         stopMonitoring();
@@ -186,7 +238,7 @@ function observeMeetingState() {
     subtree: true,
   });
 
-  if (findVideoElement()) {
+  if (monitoringEnabled && findVideoElement()) {
     startMonitoring();
   }
 }
@@ -209,6 +261,21 @@ function init() {
   if (!window.location.hostname.includes('meet.google.com')) {
     return;
   }
+
+  syncMonitoringPreference();
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== 'local' || !changes[SETTINGS_KEY]) return;
+    monitoringEnabled = parseMonitoringEnabled(changes[SETTINGS_KEY].newValue);
+
+    if (!monitoringEnabled) {
+      stopMonitoring();
+      return;
+    }
+
+    if (!isMeetingActive && findVideoElement()) {
+      startMonitoring();
+    }
+  });
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', observeMeetingState, { once: true });

@@ -7,7 +7,9 @@
   "host_permissions": [
     "*://meet.google.com/*",
     "https://api.anthropic.com/*",
-    "https://api.openai.com/*"
+    "https://api.openai.com/*",
+    "http://127.0.0.1:3131/*",
+    "http://localhost:3131/*"
   ],
   "background": {
     "service_worker": "background/background.js"

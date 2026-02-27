@@ -68,6 +68,21 @@ class Storage {
     await this.addSession(session);
   }
 
+  async getLiveCoachingFeed() {
+    const result = await chrome.storage.local.get(STORAGE_KEYS.LIVE_COACHING_FEED);
+    return result[STORAGE_KEYS.LIVE_COACHING_FEED] || [];
+  }
+
+  async saveLiveCoachingFeed(feedItems) {
+    await chrome.storage.local.set({
+      [STORAGE_KEYS.LIVE_COACHING_FEED]: feedItems,
+    });
+  }
+
+  async clearLiveCoachingFeed() {
+    await chrome.storage.local.remove(STORAGE_KEYS.LIVE_COACHING_FEED);
+  }
+
   async clearAllData() {
     await chrome.storage.local.clear();
   }
