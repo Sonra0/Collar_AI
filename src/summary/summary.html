@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Meeting Summary - Body Language Coach</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="summary.css" />
+  </head>
+  <body>
+    <div class="ambient ambient-a"></div>
+    <div class="ambient ambient-b"></div>
+
+    <main class="page">
+      <header class="hero reveal" style="--delay: 0.03s">
+        <p class="eyebrow">Meeting Insights</p>
+        <h1>Body Language Summary</h1>
+        <p id="hero-subtitle" class="subtitle">Live signals distilled into clear action.</p>
+      </header>
+
+      <section id="loading" class="panel loading reveal" style="--delay: 0.08s">
+        <div class="spinner"></div>
+        <p>Loading your latest session...</p>
+      </section>
+
+      <section id="empty-state" class="panel empty hidden">
+        <h2>No sessions yet</h2>
+        <p>Join a Google Meet call with the extension active, then return here.</p>
+      </section>
+
+      <section id="summary-content" class="hidden">
+        <section class="stats-grid">
+          <article class="panel stat reveal" style="--delay: 0.09s">
+            <p class="stat-label">Duration</p>
+            <p id="duration" class="stat-value">--</p>
+          </article>
+          <article class="panel stat reveal" style="--delay: 0.12s">
+            <p class="stat-label">Analyses</p>
+            <p id="analyses-count" class="stat-value">--</p>
+          </article>
+          <article class="panel stat highlight reveal" style="--delay: 0.16s">
+            <p class="stat-label">Overall Score</p>
+            <p id="overall-score" class="stat-value">--</p>
+          </article>
+        </section>
+
+        <section class="panel categories reveal" style="--delay: 0.21s">
+          <h2>Category Breakdown</h2>
+          <div class="category-grid">
+            <article class="category-card" id="posture-card">
+              <div class="category-head">
+                <h3>Posture</h3>
+                <p id="posture-score" class="score">--</p>
+              </div>
+              <div class="meter"><span id="posture-meter"></span></div>
+              <p id="posture-summary" class="summary">--</p>
+              <p id="posture-recommendation" class="recommendation">--</p>
+            </article>
+
+            <article class="category-card" id="facial-card">
+              <div class="category-head">
+                <h3>Facial</h3>
+                <p id="facial-score" class="score">--</p>
+              </div>
+              <div class="meter"><span id="facial-meter"></span></div>
+              <p id="facial-summary" class="summary">--</p>
+              <p id="facial-recommendation" class="recommendation">--</p>
+            </article>
+
+            <article class="category-card" id="hands-card">
+              <div class="category-head">
+                <h3>Hands</h3>
+                <p id="hands-score" class="score">--</p>
+              </div>
+              <div class="meter"><span id="hands-meter"></span></div>
+              <p id="hands-summary" class="summary">--</p>
+              <p id="hands-recommendation" class="recommendation">--</p>
+            </article>
+
+            <article class="category-card" id="appearance-card">
+              <div class="category-head">
+                <h3>Appearance</h3>
+                <p id="appearance-score" class="score">--</p>
+              </div>
+              <div class="meter"><span id="appearance-meter"></span></div>
+              <p id="appearance-summary" class="summary">--</p>
+              <p id="appearance-recommendation" class="recommendation">--</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="panel reveal" style="--delay: 0.26s">
+          <h2>Performance Timeline</h2>
+          <div class="chart-wrap">
+            <canvas id="timeline-chart"></canvas>
+          </div>
+        </section>
+
+        <section class="panel recommendations reveal" style="--delay: 0.31s">
+          <h2>Top 3 Action Items</h2>
+          <ol id="action-items">
+            <li>Loading recommendations...</li>
+          </ol>
+        </section>
+
+        <section class="actions reveal" style="--delay: 0.36s">
+          <button id="export-pdf" class="btn primary" type="button">Export PDF</button>
+          <button id="copy-summary" class="btn ghost" type="button">Copy Summary</button>
+          <button id="view-all-sessions" class="btn ghost" type="button">Session Count</button>
+        </section>
+      </section>
+    </main>
+
+    <div id="toast" class="toast"></div>
+    <script src="summary.js"></script>
+  </body>
+</html>

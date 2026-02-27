@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Body Language Coach</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <div class="orb orb-a"></div>
+      <div class="orb orb-b"></div>
+
+      <header class="panel reveal" style="--delay: 0.04s">
+        <p class="eyebrow">Meeting Presence</p>
+        <h1>Body Language Coach</h1>
+        <p class="subhead">Real-time cues for posture, engagement, and clarity.</p>
+      </header>
+
+      <section class="panel status-panel reveal" style="--delay: 0.1s">
+        <div id="status-indicator" class="status-indicator inactive">
+          <span class="status-dot"></span>
+          <div>
+            <p class="status-label">Monitoring</p>
+            <p id="status-text" class="status-text">Not active</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel reveal" style="--delay: 0.16s">
+        <div class="section-title-row">
+          <h2>Configuration</h2>
+          <span class="pill" id="provider-pill">Claude</span>
+        </div>
+
+        <div class="field">
+          <label for="api-provider">Provider</label>
+          <select id="api-provider">
+            <option value="claude">Anthropic Claude</option>
+            <option value="openai">OpenAI</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="api-key">API Key</label>
+          <input type="password" id="api-key" placeholder="Paste your secret key" autocomplete="off" />
+          <button id="validate-key" class="btn ghost" type="button">Validate key</button>
+        </div>
+
+        <div class="field split-row">
+          <div>
+            <label for="sensitivity">Sensitivity</label>
+            <select id="sensitivity">
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
+          </div>
+
+          <label class="toggle">
+            <input type="checkbox" id="notifications-enabled" />
+            <span>Alerts</span>
+          </label>
+        </div>
+
+        <div class="field split-row">
+          <div>
+            <label for="retention-days">Retention (days)</label>
+            <input type="number" id="retention-days" min="1" max="365" step="1" />
+          </div>
+
+          <label class="toggle">
+            <input type="checkbox" id="ephemeral-mode" />
+            <span>Ephemeral</span>
+          </label>
+        </div>
+
+        <button id="save-settings" class="btn primary" type="button">Save settings</button>
+      </section>
+
+      <section class="panel action-grid reveal" style="--delay: 0.22s">
+        <button id="view-history" class="btn ghost" type="button">Open summary</button>
+        <button id="clear-data" class="btn danger" type="button">Clear local data</button>
+      </section>
+
+      <footer class="footer reveal" style="--delay: 0.28s">
+        <span>v1.0.0</span>
+      </footer>
+    </main>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="popup.js"></script>
+  </body>
+</html>
