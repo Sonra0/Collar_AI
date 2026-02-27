@@ -13,6 +13,24 @@ let missedFrames = 0;
 const MAX_MISSED_FRAMES = 3;
 const READINESS_POLL_INTERVAL = 2000;
 
+function probeForReadyVideo() {
+  if (isMeetingActive) return;
+  if (findVideoElement()) {
+    startMonitoring();
+  }
+}
+
+function startReadinessPolling() {
+  if (readinessPollInterval) return;
+  readinessPollInterval = setInterval(probeForReadyVideo, READINESS_POLL_INTERVAL);
+}
+
+function stopReadinessPolling() {
+  if (!readinessPollInterval) return;
+  clearInterval(readinessPollInterval);
+  readinessPollInterval = null;
+}
+
 function findVideoElement() {
   const selectors = [
     'video[autoplay]',
@@ -103,11 +121,7 @@ function startMonitoring() {
 
   isMeetingActive = true;
   missedFrames = 0;
-
-  if (readinessPollInterval) {
-    clearInterval(readinessPollInterval);
-    readinessPollInterval = null;
-  }
+  stopReadinessPolling();
 
   safeSendMessage({
     type: 'MEETING_STARTED',
@@ -130,6 +144,8 @@ function stopMonitoring() {
     captureInterval = null;
   }
 
+  startReadinessPolling();
+
   safeSendMessage({
     type: 'MEETING_ENDED',
     timestamp: Date.now(),
@@ -140,17 +156,7 @@ function stopMonitoring() {
 
 function observeMeetingState() {
   let debounceTimer = null;
-
-  const probeForReadyVideo = () => {
-    if (isMeetingActive) return;
-    if (findVideoElement()) {
-      startMonitoring();
-    }
-  };
-
-  if (!readinessPollInterval) {
-    readinessPollInterval = setInterval(probeForReadyVideo, READINESS_POLL_INTERVAL);
-  }
+  startReadinessPolling();
 
   const observer = new MutationObserver(() => {
     if (debounceTimer) return;
@@ -203,10 +209,7 @@ function init() {
 
   window.addEventListener('beforeunload', stopMonitoring);
   window.addEventListener('beforeunload', () => {
-    if (readinessPollInterval) {
-      clearInterval(readinessPollInterval);
-      readinessPollInterval = null;
-    }
+    stopReadinessPolling();
   });
   console.log('Meeting Body Language Coach: content script loaded');
 }
