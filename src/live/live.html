@@ -15,9 +15,12 @@
   <body>
     <main class="shell">
       <header class="hero">
-        <p class="eyebrow">Live Coaching</p>
-        <h1>Real-time Feedback Stream</h1>
-        <p class="subhead">Alerts are shown here even when desktop notifications are blocked.</p>
+        <div class="hero-top-row">
+          <p id="hero-eyebrow" class="eyebrow">Live Coaching</p>
+          <button id="language-toggle" class="language-toggle" type="button" aria-label="Switch language">🇨🇦 English</button>
+        </div>
+        <h1 id="hero-title">Real-time Feedback Stream</h1>
+        <p id="hero-subhead" class="subhead">Alerts are shown here even when desktop notifications are blocked.</p>
       </header>
 
       <section class="toolbar">
@@ -25,7 +28,10 @@
           <span id="item-count">0 items</span>
           <span id="last-updated">Updated just now</span>
         </div>
-        <button id="clear-feed" class="btn danger" type="button">Clear feed</button>
+        <div class="toolbar-actions">
+          <button id="back-to-main" class="btn ghost" type="button">Back</button>
+          <button id="clear-feed" class="btn danger" type="button">Clear feed</button>
+        </div>
       </section>
 
       <section class="feed" id="feed">
