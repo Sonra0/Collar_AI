@@ -14,6 +14,8 @@ let monitoringEnabled = true;
 const MAX_MISSED_FRAMES = 3;
 const READINESS_POLL_INTERVAL = 2000;
 const SETTINGS_KEY = 'settings';
+const CONTENT_SCRIPT_BOOT_KEY = '__meetingBodyLanguageCoachContentScriptBooted__';
+const CONTENT_SCRIPT_PING_LISTENER_KEY = '__meetingBodyLanguageCoachPingListenerBound__';
 
 function probeForReadyVideo() {
   if (isMeetingActive) return;
@@ -144,6 +146,24 @@ function safeSendMessage(payload) {
   }
 }
 
+function registerPingListener() {
+  if (window[CONTENT_SCRIPT_PING_LISTENER_KEY]) return;
+  window[CONTENT_SCRIPT_PING_LISTENER_KEY] = true;
+
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.type !== 'PING_CONTENT_SCRIPT') {
+      return undefined;
+    }
+
+    sendResponse({
+      ok: true,
+      isMeetingActive,
+      monitoringEnabled,
+    });
+    return false;
+  });
+}
+
 function sendFrameToBackground(frameData) {
   safeSendMessage({
     type: 'ANALYZE_FRAME',
@@ -262,6 +282,7 @@ function init() {
     return;
   }
 
+  registerPingListener();
   syncMonitoringPreference();
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== 'local' || !changes[SETTINGS_KEY]) return;
@@ -290,4 +311,7 @@ function init() {
   console.log('Meeting Body Language Coach: content script loaded');
 }
 
-init();
+if (!window[CONTENT_SCRIPT_BOOT_KEY]) {
+  window[CONTENT_SCRIPT_BOOT_KEY] = true;
+  init();
+}

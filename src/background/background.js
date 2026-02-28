@@ -7,6 +7,8 @@ import {
   TIMING,
 } from '../utils/constants.js';
 import { extractPrioritySuggestions } from '../utils/suggestions.mjs';
+import { buildEncouragementMessage } from './feedback-messaging.js';
+import { bootstrapMeetTabs, MEET_TAB_URL_PATTERNS } from './meet-bootstrap.js';
 
 /**
  * Background service worker.
@@ -17,10 +19,115 @@ let currentSession = null;
 let lastNotificationTime = 0;
 let lastErrorNotificationTime = 0;
 let lastFrameRecorderErrorTime = 0;
+let lastPositiveFeedbackTime = 0;
 let frameRecorderConnected = true;
 let consecutiveWarnings = createWarningTracker();
 let sessionRestored = false;
 let analysisRuntime = createAnalysisRuntime();
+let lastMeetBootstrapAttempt = 0;
+let meetBootstrapInFlight = null;
+const MEET_BOOTSTRAP_COOLDOWN_MS = 15000;
+const POSITIVE_FEEDBACK_COOLDOWN_MS = 180000;
+
+async function queryMeetTabs() {
+  return new Promise((resolve) => {
+    try {
+      chrome.tabs.query({ url: MEET_TAB_URL_PATTERNS }, (tabs) => {
+        if (chrome.runtime.lastError) {
+          resolve([]);
+          return;
+        }
+        resolve(Array.isArray(tabs) ? tabs : []);
+      });
+    } catch {
+      resolve([]);
+    }
+  });
+}
+
+async function pingMeetContentScript(tabId) {
+  return new Promise((resolve) => {
+    try {
+      chrome.tabs.sendMessage(tabId, { type: 'PING_CONTENT_SCRIPT' }, (response) => {
+        if (chrome.runtime.lastError) {
+          resolve(false);
+          return;
+        }
+        resolve(Boolean(response?.ok));
+      });
+    } catch {
+      resolve(false);
+    }
+  });
+}
+
+async function injectMeetContentScript(tabId) {
+  return new Promise((resolve) => {
+    try {
+      chrome.scripting.executeScript(
+        {
+          target: { tabId },
+          files: ['content/content.js'],
+        },
+        () => {
+          if (chrome.runtime.lastError) {
+            resolve(false);
+            return;
+          }
+          resolve(true);
+        },
+      );
+    } catch {
+      resolve(false);
+    }
+  });
+}
+
+async function ensureMeetContentScripts(reason = 'runtime', force = false) {
+  const now = Date.now();
+  if (!force && now - lastMeetBootstrapAttempt < MEET_BOOTSTRAP_COOLDOWN_MS) {
+    return null;
+  }
+
+  if (meetBootstrapInFlight) {
+    return meetBootstrapInFlight;
+  }
+
+  lastMeetBootstrapAttempt = now;
+  meetBootstrapInFlight = (async () => {
+    try {
+      const tabs = await queryMeetTabs();
+      if (!tabs.length) {
+        return {
+          checked: 0,
+          alreadyReady: 0,
+          injected: 0,
+          failed: 0,
+          skipped: 0,
+        };
+      }
+
+      const summary = await bootstrapMeetTabs(tabs, {
+        pingTab: pingMeetContentScript,
+        injectTab: injectMeetContentScript,
+        logger: console,
+      });
+
+      if (summary.injected > 0 || summary.failed > 0) {
+        console.log('Meet content script bootstrap:', reason, summary);
+      }
+
+      return summary;
+    } catch (error) {
+      console.warn('Meet tab bootstrap failed:', error);
+      return null;
+    } finally {
+      meetBootstrapInFlight = null;
+    }
+  })();
+
+  return meetBootstrapInFlight;
+}
 
 async function restoreSession() {
   if (sessionRestored) return;
@@ -273,6 +380,7 @@ async function handleMeetingStarted(message) {
 
   analysisRuntime = createAnalysisRuntime();
   consecutiveWarnings = createWarningTracker();
+  lastPositiveFeedbackTime = 0;
   await storage.saveCurrentSession(currentSession);
   await appendLiveCoachingItem({
     id: `meeting-start-${message.timestamp}`,
@@ -375,6 +483,21 @@ async function checkForIssues(analysis, settings) {
     if (shown) {
       lastNotificationTime = now;
     }
+    return;
+  }
+
+  const encouragementMessage = buildEncouragementMessage(analysis);
+  const positiveCooldownExpired = now - lastPositiveFeedbackTime > POSITIVE_FEEDBACK_COOLDOWN_MS;
+  if (encouragementMessage && positiveCooldownExpired) {
+    lastPositiveFeedbackTime = now;
+    await appendLiveCoachingItem({
+      id: `positive-${now}`,
+      title: 'Live Coaching',
+      message: encouragementMessage,
+      category: 'info',
+      timestamp: now,
+      delivery: 'in-app',
+    });
   }
 }
 
@@ -463,6 +586,7 @@ async function stopCurrentSessionSilently(endTimestamp = Date.now()) {
   await storage.clearCurrentSession();
   currentSession = null;
   consecutiveWarnings = createWarningTracker();
+  lastPositiveFeedbackTime = 0;
 }
 
 async function handleMonitoringToggle(enabled) {
@@ -487,6 +611,7 @@ async function handleMonitoringToggle(enabled) {
       timestamp: Date.now(),
       delivery: 'in-app',
     });
+    await ensureMeetContentScripts('monitoring-enabled', true);
   }
 
   return { ok: true, monitoringEnabled: enabled };
@@ -533,6 +658,7 @@ async function handleMeetingEnded(message) {
 
   currentSession = null;
   consecutiveWarnings = createWarningTracker();
+  lastPositiveFeedbackTime = 0;
   await appendLiveCoachingItem({
     id: `meeting-end-${endedAt}`,
     title: 'Meeting Monitoring Ended',
@@ -548,6 +674,17 @@ restoreSession();
 
 chrome.runtime.onInstalled.addListener(async () => {
   await storage.getSettings();
+  await ensureMeetContentScripts('installed', true);
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  void ensureMeetContentScripts('startup', true);
+});
+
+chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
+  if (changeInfo.status !== 'complete') return;
+  if (typeof tab?.url !== 'string' || !tab.url.includes('meet.google.com/')) return;
+  void ensureMeetContentScripts('tab-updated');
 });
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -574,6 +711,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           {
             const settings = await storage.getSettings();
             const monitoringEnabled = settings.monitoringEnabled !== false;
+            if (monitoringEnabled && !currentSession) {
+              void ensureMeetContentScripts('status-check');
+            }
             sendResponse({
               active: monitoringEnabled && Boolean(currentSession),
               sessionId: currentSession?.id || null,

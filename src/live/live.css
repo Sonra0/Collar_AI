@@ -146,6 +146,10 @@ h1 {
   border-color: rgba(141, 211, 255, 0.46);
 }
 
+.feed-item.info {
+  border-color: rgba(108, 231, 201, 0.4);
+}
+
 .item-row {
   display: flex;
   justify-content: space-between;

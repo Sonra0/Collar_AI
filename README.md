@@ -91,7 +91,8 @@ src/
 
 ### Extension not detecting meeting video
 - Confirm camera is enabled in Google Meet.
-- Refresh the meeting tab.
+- If the extension was installed while Meet was already open, wait a few seconds or open the popup once; the service worker now auto-attaches the content script to existing Meet tabs.
+- If detection still does not start, refresh the meeting tab.
 - Check content script console logs in DevTools.
 
 ### API analysis fails
