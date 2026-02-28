@@ -1,8 +1,9 @@
 import { TIMING } from '../utils/constants.js';
+import { isSupportedPlatform, getSelfVideoSelectors } from '../utils/platforms.js';
 import { pickBestVideoElement } from './video-selection.mjs';
 
 /**
- * Content script for Google Meet integration.
+ * Content script for video meeting platform integration.
  * Captures video frames and sends them to the background worker.
  */
 
@@ -59,13 +60,7 @@ async function syncMonitoringPreference() {
 }
 
 function findVideoElement() {
-  const preferredSelectors = [
-    'div[data-self-video="true"] video',
-    'video[data-self-video="true"]',
-    '[data-is-self="true"] video',
-    '[data-local-participant="true"] video',
-    '[data-self-name] video',
-  ];
+  const preferredSelectors = getSelfVideoSelectors(window.location.hostname);
 
   const generalSelectors = [
     'video[autoplay]',
@@ -212,7 +207,7 @@ function startMonitoring() {
   captureInterval = setInterval(captureAndSend, TIMING.CAPTURE_INTERVAL);
   captureAndSend();
 
-  console.log('Meeting Body Language Coach: monitoring started');
+  console.log('CollarAI: monitoring started');
 }
 
 function stopMonitoring() {
@@ -232,7 +227,7 @@ function stopMonitoring() {
     timestamp: Date.now(),
   });
 
-  console.log('Meeting Body Language Coach: monitoring stopped');
+  console.log('CollarAI: monitoring stopped');
 }
 
 function observeMeetingState() {
@@ -278,7 +273,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 function init() {
-  if (!window.location.hostname.includes('meet.google.com')) {
+  if (!isSupportedPlatform(window.location.hostname)) {
     return;
   }
 
@@ -308,7 +303,7 @@ function init() {
   window.addEventListener('beforeunload', () => {
     stopReadinessPolling();
   });
-  console.log('Meeting Body Language Coach: content script loaded');
+  console.log('CollarAI: content script loaded');
 }
 
 if (!window[CONTENT_SCRIPT_BOOT_KEY]) {
