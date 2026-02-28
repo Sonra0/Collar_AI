@@ -1,11 +1,17 @@
 {
   "manifest_version": 3,
-  "name": "Meeting Body Language Coach",
+  "name": "CollarAI",
   "version": "1.0.0",
   "description": "Real-time body language feedback for video meetings",
-  "permissions": ["activeTab", "notifications", "storage", "scripting", "tabs"],
+  "permissions": ["activeTab", "notifications", "storage", "scripting", "tabs", "sidePanel"],
   "host_permissions": [
     "*://meet.google.com/*",
+    "*://app.zoom.us/*",
+    "*://teams.microsoft.com/*",
+    "*://teams.live.com/*",
+    "*://*.webex.com/*",
+    "*://app.slack.com/*",
+    "*://discord.com/*",
     "https://api.anthropic.com/*",
     "https://api.openai.com/*",
     "http://127.0.0.1:3131/*",
@@ -24,11 +30,22 @@
   },
   "content_scripts": [
     {
-      "matches": ["*://meet.google.com/*"],
+      "matches": [
+        "*://meet.google.com/*",
+        "*://app.zoom.us/*",
+        "*://teams.microsoft.com/*",
+        "*://teams.live.com/*",
+        "*://*.webex.com/*",
+        "*://app.slack.com/*",
+        "*://discord.com/*"
+      ],
       "js": ["content/content.js"],
       "run_at": "document_end"
     }
   ],
+  "side_panel": {
+    "default_path": "live/live.html"
+  },
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
