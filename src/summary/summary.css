@@ -72,6 +72,13 @@ body {
   margin-bottom: 18px;
 }
 
+.hero-top-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
 .eyebrow {
   margin: 0;
   color: var(--mint);
@@ -298,6 +305,22 @@ h2 {
 .btn.ghost {
   background: rgba(121, 184, 255, 0.15);
   border-color: rgba(121, 184, 255, 0.3);
+}
+
+.language-toggle {
+  border: 1px solid rgba(132, 171, 255, 0.35);
+  border-radius: 999px;
+  padding: 6px 11px;
+  background: rgba(121, 184, 255, 0.18);
+  color: #dbebff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.language-toggle:hover {
+  background: rgba(121, 184, 255, 0.28);
 }
 
 .toast {

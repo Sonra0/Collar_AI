@@ -71,6 +71,13 @@ body {
   backdrop-filter: blur(9px);
 }
 
+.header-top-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
 .eyebrow {
   margin: 0;
   color: var(--accent);
@@ -282,6 +289,22 @@ select:focus {
 
 .btn.warning.on-state:hover {
   background: rgba(92, 225, 195, 0.3);
+}
+
+.language-toggle {
+  border: 1px solid rgba(132, 171, 255, 0.35);
+  border-radius: 999px;
+  padding: 5px 10px;
+  background: rgba(121, 184, 255, 0.18);
+  color: #dbebff;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.language-toggle:hover {
+  background: rgba(121, 184, 255, 0.28);
 }
 
 .action-grid {

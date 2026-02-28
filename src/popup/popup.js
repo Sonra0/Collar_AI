@@ -1,15 +1,39 @@
 import storage from '../utils/storage.js';
 import api from '../utils/api.js';
+import {
+  DEFAULT_LANGUAGE,
+  getNextLanguage,
+  languageHtmlCode,
+  languageToggleAriaLabel,
+  languageToggleLabel,
+  resolveLanguage,
+  t,
+} from '../utils/i18n.js';
 
 const elements = {
+  languageToggle: document.getElementById('language-toggle'),
+  heroEyebrow: document.getElementById('hero-eyebrow'),
+  heroTitle: document.getElementById('hero-title'),
+  heroSubhead: document.getElementById('hero-subhead'),
+  statusLabel: document.getElementById('status-label'),
   statusText: document.getElementById('status-text'),
   statusIndicator: document.getElementById('status-indicator'),
+  configHeading: document.getElementById('config-heading'),
+  providerLabel: document.getElementById('provider-label'),
   apiProvider: document.getElementById('api-provider'),
+  apiKeyLabel: document.getElementById('api-key-label'),
   apiKey: document.getElementById('api-key'),
   validateKey: document.getElementById('validate-key'),
+  sensitivityLabel: document.getElementById('sensitivity-label'),
   sensitivity: document.getElementById('sensitivity'),
+  sensitivityLow: document.getElementById('sensitivity-low'),
+  sensitivityMedium: document.getElementById('sensitivity-medium'),
+  sensitivityHigh: document.getElementById('sensitivity-high'),
+  alertsLabel: document.getElementById('alerts-label'),
   notificationsEnabled: document.getElementById('notifications-enabled'),
+  retentionLabel: document.getElementById('retention-label'),
   retentionDays: document.getElementById('retention-days'),
+  ephemeralLabel: document.getElementById('ephemeral-label'),
   ephemeralMode: document.getElementById('ephemeral-mode'),
   saveSettings: document.getElementById('save-settings'),
   monitoringToggle: document.getElementById('monitoring-toggle'),
@@ -22,6 +46,7 @@ const elements = {
 
 let toastTimeout = null;
 let monitoringEnabled = true;
+let currentLanguage = DEFAULT_LANGUAGE;
 
 function showToast(message, type = 'info') {
   elements.toast.textContent = message;
@@ -39,9 +64,18 @@ function showToast(message, type = 'info') {
   }, 2200);
 }
 
+function setButtonLabel(button, label) {
+  button.dataset.label = label;
+  if (!button.disabled) {
+    button.textContent = label;
+  }
+}
+
 function setBusy(button, busy, label) {
   button.disabled = busy;
-  button.dataset.label = button.dataset.label || button.textContent;
+  if (!button.dataset.label) {
+    button.dataset.label = button.textContent;
+  }
   button.textContent = busy ? label : button.dataset.label;
   button.style.opacity = busy ? '0.7' : '1';
 }
@@ -57,40 +91,74 @@ function syncPrivacyControls() {
 }
 
 function syncMonitoringToggleButton() {
-  elements.monitoringToggle.textContent = monitoringEnabled ? 'Turn monitoring off' : 'Turn monitoring on';
+  const label = monitoringEnabled
+    ? t(currentLanguage, 'popup.monitoringOffButton')
+    : t(currentLanguage, 'popup.monitoringOnButton');
+  elements.monitoringToggle.textContent = label;
   elements.monitoringToggle.classList.toggle('on-state', !monitoringEnabled);
 }
 
 function formatRuntimeStatus(runtimeStatus) {
   if (runtimeStatus.monitoringEnabled === false) {
-    return 'Monitoring is OFF';
+    return t(currentLanguage, 'popup.statusOff');
   }
 
   if (runtimeStatus.notificationsEnabled && runtimeStatus.notificationPermission === 'denied') {
-    return 'Active · notifications blocked';
+    return t(currentLanguage, 'popup.statusNotificationsBlocked');
   }
 
   const analyses = Number(runtimeStatus.analyses) || 0;
-  const analysesLabel = analyses === 1 ? '1 analysis' : `${analyses} analyses`;
   if (analyses > 0) {
-    return `Active · ${analysesLabel}`;
+    return t(currentLanguage, 'popup.statusWithAnalyses', { count: analyses });
   }
 
   if (!runtimeStatus.apiConfigured) {
-    return 'Active · API key not saved';
+    return t(currentLanguage, 'popup.statusApiMissing');
   }
 
   const runtime = runtimeStatus.analysisRuntime || {};
   const failed = Number(runtime.failed) || 0;
   if (failed > 0) {
-    const errorLabel = failed === 1 ? '1 error' : `${failed} errors`;
-    return `Active · 0 analyses · ${errorLabel}`;
+    return t(currentLanguage, 'popup.statusWithErrors', { count: failed });
   }
 
-  return 'Active · waiting for first analysis';
+  return t(currentLanguage, 'popup.statusWaitingFirst');
+}
+
+function applyLanguage() {
+  document.documentElement.lang = languageHtmlCode(currentLanguage);
+  document.title = t(currentLanguage, 'popup.pageTitle');
+
+  elements.languageToggle.textContent = languageToggleLabel(currentLanguage);
+  elements.languageToggle.setAttribute('aria-label', languageToggleAriaLabel(currentLanguage));
+  elements.heroEyebrow.textContent = t(currentLanguage, 'popup.heroEyebrow');
+  elements.heroTitle.textContent = t(currentLanguage, 'popup.heroTitle');
+  elements.heroSubhead.textContent = t(currentLanguage, 'popup.heroSubhead');
+  elements.statusLabel.textContent = t(currentLanguage, 'popup.statusLabel');
+
+  elements.configHeading.textContent = t(currentLanguage, 'popup.configHeading');
+  elements.providerLabel.textContent = t(currentLanguage, 'popup.providerLabel');
+  elements.apiKeyLabel.textContent = t(currentLanguage, 'popup.apiKeyLabel');
+  elements.apiKey.placeholder = t(currentLanguage, 'popup.apiKeyPlaceholder');
+  setButtonLabel(elements.validateKey, t(currentLanguage, 'popup.validateKey'));
+
+  elements.sensitivityLabel.textContent = t(currentLanguage, 'popup.sensitivityLabel');
+  elements.sensitivityLow.textContent = t(currentLanguage, 'popup.sensitivityLow');
+  elements.sensitivityMedium.textContent = t(currentLanguage, 'popup.sensitivityMedium');
+  elements.sensitivityHigh.textContent = t(currentLanguage, 'popup.sensitivityHigh');
+  elements.alertsLabel.textContent = t(currentLanguage, 'popup.alertsLabel');
+  elements.retentionLabel.textContent = t(currentLanguage, 'popup.retentionLabel');
+  elements.ephemeralLabel.textContent = t(currentLanguage, 'popup.ephemeralLabel');
+
+  setButtonLabel(elements.saveSettings, t(currentLanguage, 'popup.saveSettings'));
+  syncMonitoringToggleButton();
+  elements.liveCoaching.textContent = t(currentLanguage, 'popup.liveCoachingButton');
+  elements.viewHistory.textContent = t(currentLanguage, 'popup.openSummaryButton');
+  elements.clearData.textContent = t(currentLanguage, 'popup.clearDataButton');
 }
 
 async function loadSettings() {
+  const queryLanguage = new URLSearchParams(window.location.search).get('lang');
   const settings = await storage.getSettings();
   elements.apiProvider.value = settings.apiProvider;
   elements.apiKey.value = settings.apiKey || '';
@@ -99,7 +167,13 @@ async function loadSettings() {
   elements.retentionDays.value = settings.dataRetentionDays;
   elements.ephemeralMode.checked = settings.ephemeralMode;
   monitoringEnabled = settings.monitoringEnabled !== false;
-  syncMonitoringToggleButton();
+  currentLanguage = queryLanguage ? resolveLanguage(queryLanguage) : resolveLanguage(settings.language);
+
+  if (queryLanguage && currentLanguage !== resolveLanguage(settings.language)) {
+    await storage.saveSettings({ language: currentLanguage });
+  }
+
+  applyLanguage();
   elements.providerPill.textContent = providerName(settings.apiProvider);
   syncPrivacyControls();
 }
@@ -120,21 +194,21 @@ async function updateStatus() {
   });
 
   if (!runtimeStatus) {
-    elements.statusText.textContent = 'Not active';
+    elements.statusText.textContent = t(currentLanguage, 'popup.statusNotActive');
     elements.statusText.removeAttribute('title');
     elements.statusIndicator.classList.remove('active');
     return;
   }
 
   if (runtimeStatus.monitoringEnabled === false) {
-    elements.statusText.textContent = 'Monitoring is OFF';
+    elements.statusText.textContent = t(currentLanguage, 'popup.statusOff');
     elements.statusText.removeAttribute('title');
     elements.statusIndicator.classList.remove('active');
     return;
   }
 
   if (!runtimeStatus.active) {
-    elements.statusText.textContent = 'Not active';
+    elements.statusText.textContent = t(currentLanguage, 'popup.statusNotActive');
     elements.statusText.removeAttribute('title');
     elements.statusIndicator.classList.remove('active');
     return;
@@ -156,6 +230,7 @@ async function persistSettings() {
   const settings = {
     apiProvider: elements.apiProvider.value,
     apiKey: elements.apiKey.value.trim(),
+    language: currentLanguage,
     monitoringEnabled,
     sensitivity: elements.sensitivity.value,
     notificationsEnabled: elements.notificationsEnabled.checked,
@@ -186,14 +261,16 @@ async function toggleMonitoring() {
   }
 
   await updateStatus();
-  showToast(monitoringEnabled ? 'Monitoring turned on.' : 'Monitoring turned off.');
+  showToast(
+    monitoringEnabled ? t(currentLanguage, 'popup.toastMonitoringOn') : t(currentLanguage, 'popup.toastMonitoringOff'),
+  );
 }
 
 async function saveSettings() {
   const settings = await persistSettings();
   setBusy(elements.saveSettings, true, 'Saved');
   setTimeout(() => setBusy(elements.saveSettings, false), 650);
-  showToast(`Settings saved locally (${providerName(settings.apiProvider)}).`);
+  showToast(t(currentLanguage, 'popup.toastSettingsSaved', { provider: providerName(settings.apiProvider) }));
 }
 
 async function validateApiKey() {
@@ -201,17 +278,22 @@ async function validateApiKey() {
   const provider = elements.apiProvider.value;
 
   if (!apiKey) {
-    showToast('Enter an API key first.', 'error');
+    showToast(t(currentLanguage, 'popup.toastEnterApiKey'), 'error');
     return;
   }
 
-  setBusy(elements.validateKey, true, 'Validating...');
+  setBusy(elements.validateKey, true, '...');
   try {
     await persistSettings();
     const valid = await api.validateApiKey(apiKey, provider);
-    showToast(valid ? 'API key is valid and saved.' : 'API key is invalid or unauthorized.', valid ? 'info' : 'error');
+    showToast(
+      valid ? t(currentLanguage, 'popup.toastApiValid') : t(currentLanguage, 'popup.toastApiInvalid'),
+      valid ? 'info' : 'error',
+    );
   } catch (error) {
-    const message = error?.message ? `Validation failed: ${error.message}` : 'Validation failed. Try again.';
+    const message = error?.message
+      ? t(currentLanguage, 'popup.toastValidationFailed', { message: error.message })
+      : t(currentLanguage, 'popup.toastValidationFailedGeneric');
     showToast(message, 'error');
   } finally {
     setBusy(elements.validateKey, false);
@@ -219,33 +301,33 @@ async function validateApiKey() {
 }
 
 function viewHistory() {
+  const url = chrome.runtime.getURL(`summary/summary.html?lang=${encodeURIComponent(currentLanguage)}`);
   chrome.tabs.create({
-    url: chrome.runtime.getURL('summary/summary.html'),
+    url,
   });
 }
 
 function openLiveCoaching() {
-  const url = chrome.runtime.getURL('live/live.html');
-  try {
-    chrome.windows.create({
-      url,
-      type: 'popup',
-      width: 460,
-      height: 760,
-    });
-  } catch {
-    chrome.tabs.create({ url });
-  }
+  const url = chrome.runtime.getURL(`live/live.html?lang=${encodeURIComponent(currentLanguage)}`);
+  window.location.href = url;
 }
 
 async function clearAllData() {
-  const approved = window.confirm('Clear settings and all saved sessions? This cannot be undone.');
+  const approved = window.confirm(t(currentLanguage, 'popup.confirmClearData'));
   if (!approved) return;
 
   await storage.clearAllData();
   await loadSettings();
   await updateStatus();
-  showToast('All extension data was cleared.');
+  showToast(t(currentLanguage, 'popup.toastDataCleared'));
+}
+
+async function toggleLanguage() {
+  currentLanguage = getNextLanguage(currentLanguage);
+  await storage.saveSettings({ language: currentLanguage });
+  applyLanguage();
+  await updateStatus();
+  showToast(t(currentLanguage, 'popup.toastLanguageSwitched', { language: t(currentLanguage, 'languageName') }));
 }
 
 elements.saveSettings.addEventListener('click', saveSettings);
@@ -254,10 +336,25 @@ elements.monitoringToggle.addEventListener('click', toggleMonitoring);
 elements.liveCoaching.addEventListener('click', openLiveCoaching);
 elements.viewHistory.addEventListener('click', viewHistory);
 elements.clearData.addEventListener('click', clearAllData);
+elements.languageToggle.addEventListener('click', toggleLanguage);
 elements.apiProvider.addEventListener('change', () => {
   elements.providerPill.textContent = providerName(elements.apiProvider.value);
 });
 elements.ephemeralMode.addEventListener('change', syncPrivacyControls);
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== 'local' || !changes.settings?.newValue) {
+    return;
+  }
+
+  const incoming = changes.settings.newValue;
+  const nextLanguage = resolveLanguage(incoming.language);
+  if (nextLanguage !== currentLanguage) {
+    currentLanguage = nextLanguage;
+    applyLanguage();
+    void updateStatus();
+  }
+});
 
 (async function init() {
   await loadSettings();
