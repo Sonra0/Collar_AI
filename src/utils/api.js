@@ -1,4 +1,4 @@
-import { ANALYSIS_PROMPT, API_ENDPOINTS, API_MODELS } from './constants.js';
+import { ANALYSIS_PROMPT, ANALYSIS_PROMPTS, API_ENDPOINTS, API_MODELS } from './constants.js';
 
 function prepareFrame(frameInput) {
   const isDataUrl = typeof frameInput === 'string' && frameInput.startsWith('data:image');
@@ -35,6 +35,22 @@ function extractJson(text) {
   }
 }
 
+function resolvePrompt(language) {
+  if (language && ANALYSIS_PROMPTS[language]) {
+    return ANALYSIS_PROMPTS[language];
+  }
+
+  return ANALYSIS_PROMPT;
+}
+
+function normalizeTargetLanguage(language) {
+  return language === 'fr-FR' ? 'fr-FR' : 'en-CA';
+}
+
+function translationLanguageLabel(language) {
+  return normalizeTargetLanguage(language) === 'fr-FR' ? 'French' : 'Canadian English';
+}
+
 /**
  * API client for vision analysis
  */
@@ -56,7 +72,7 @@ class APIClient {
     return ordered.filter((model, index) => model && ordered.indexOf(model) === index);
   }
 
-  async requestClaudeAnalysis(frame, apiKey, model) {
+  async requestClaudeAnalysis(frame, apiKey, model, promptText) {
     const response = await fetch(API_ENDPOINTS.claude, {
       method: 'POST',
       headers: {
@@ -84,7 +100,7 @@ class APIClient {
               },
               {
                 type: 'text',
-                text: ANALYSIS_PROMPT,
+                text: promptText,
               },
             ],
           },
@@ -156,12 +172,13 @@ class APIClient {
 
   async analyzeWithClaude(frameInput, apiKey) {
     const frame = prepareFrame(frameInput);
+    const promptText = resolvePrompt('en-CA');
     const models = this.buildClaudeModelCandidates();
     let lastError = null;
 
     for (const model of models) {
       try {
-        const result = await this.requestClaudeAnalysis(frame, apiKey, model);
+        const result = await this.requestClaudeAnalysis(frame, apiKey, model, promptText);
         this.cachedClaudeModel = model;
         return result;
       } catch (error) {
@@ -176,8 +193,32 @@ class APIClient {
     throw new Error('Claude API error: no compatible model available');
   }
 
-  async analyzeWithOpenAI(frameInput, apiKey) {
+  async analyzeWithClaudeByLanguage(frameInput, apiKey, language = 'en-CA') {
     const frame = prepareFrame(frameInput);
+    const promptText = resolvePrompt(language);
+    const models = this.buildClaudeModelCandidates();
+    let lastError = null;
+
+    for (const model of models) {
+      try {
+        const result = await this.requestClaudeAnalysis(frame, apiKey, model, promptText);
+        this.cachedClaudeModel = model;
+        return result;
+      } catch (error) {
+        lastError = error;
+        if (!this.shouldRetryClaudeModel(error)) {
+          throw error;
+        }
+      }
+    }
+
+    if (lastError) throw lastError;
+    throw new Error('Claude API error: no compatible model available');
+  }
+
+  async analyzeWithOpenAI(frameInput, apiKey, language = 'en-CA') {
+    const frame = prepareFrame(frameInput);
+    const promptText = resolvePrompt(language);
 
     const response = await fetch(API_ENDPOINTS.openai, {
       method: 'POST',
@@ -200,7 +241,7 @@ class APIClient {
               },
               {
                 type: 'text',
-                text: ANALYSIS_PROMPT,
+                text: promptText,
               },
             ],
           },
@@ -227,17 +268,17 @@ class APIClient {
     return extractJson(analysisText);
   }
 
-  async analyze(frameInput, apiKey, provider = 'claude') {
+  async analyze(frameInput, apiKey, provider = 'claude', language = 'en-CA') {
     if (!apiKey) {
       throw new Error('Missing API key');
     }
 
     if (provider === 'claude') {
-      return this.analyzeWithClaude(frameInput, apiKey);
+      return this.analyzeWithClaudeByLanguage(frameInput, apiKey, language);
     }
 
     if (provider === 'openai') {
-      return this.analyzeWithOpenAI(frameInput, apiKey);
+      return this.analyzeWithOpenAI(frameInput, apiKey, language);
     }
 
     throw new Error(`Unsupported API provider: ${provider}`);
@@ -257,6 +298,123 @@ class APIClient {
     }
 
     throw new Error(`Unsupported API provider: ${provider}`);
+  }
+
+  async translateWithClaude(text, apiKey, targetLanguage = 'en-CA') {
+    const sourceText = String(text || '').trim();
+    if (!sourceText) return '';
+
+    const languageLabel = translationLanguageLabel(targetLanguage);
+    const models = this.buildClaudeModelCandidates();
+    let lastError = null;
+
+    for (const model of models) {
+      try {
+        const response = await fetch(API_ENDPOINTS.claude, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true',
+          },
+          body: JSON.stringify({
+            model,
+            max_tokens: 240,
+            temperature: 0,
+            messages: [
+              {
+                role: 'user',
+                content: [
+                  {
+                    type: 'text',
+                    text: `Translate this body-language coaching text to ${languageLabel}. Return only translated text with no explanation.\n\n${sourceText}`,
+                  },
+                ],
+              },
+            ],
+          }),
+        });
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          const message = error?.error?.message || response.statusText;
+          const err = new Error(`Claude translation error: ${message}`);
+          err.status = response.status;
+          throw err;
+        }
+
+        const data = await response.json();
+        this.cachedClaudeModel = model;
+        return String(data.content?.find((entry) => entry.type === 'text')?.text || sourceText).trim();
+      } catch (error) {
+        lastError = error;
+        if (!this.shouldRetryClaudeModel(error)) {
+          throw error;
+        }
+      }
+    }
+
+    if (lastError) throw lastError;
+    return sourceText;
+  }
+
+  async translateWithOpenAI(text, apiKey, targetLanguage = 'en-CA') {
+    const sourceText = String(text || '').trim();
+    if (!sourceText) return '';
+
+    const languageLabel = translationLanguageLabel(targetLanguage);
+    const response = await fetch(API_ENDPOINTS.openai, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: API_MODELS.openai,
+        temperature: 0,
+        messages: [
+          {
+            role: 'user',
+            content: `Translate this body-language coaching text to ${languageLabel}. Return only translated text with no explanation.\n\n${sourceText}`,
+          },
+        ],
+        max_tokens: 240,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(`OpenAI translation error: ${error.error?.message || response.statusText}`);
+    }
+
+    const data = await response.json();
+    const rawContent = data.choices?.[0]?.message?.content;
+    const translated = Array.isArray(rawContent)
+      ? rawContent
+        .map((part) => {
+          if (typeof part === 'string') return part;
+          return part?.text || '';
+        })
+        .join('\n')
+      : (rawContent || sourceText);
+    return String(translated).trim();
+  }
+
+  async translateText(text, apiKey, provider = 'claude', targetLanguage = 'en-CA') {
+    if (!apiKey) {
+      return String(text || '');
+    }
+
+    if (provider === 'claude') {
+      return this.translateWithClaude(text, apiKey, targetLanguage);
+    }
+
+    if (provider === 'openai') {
+      return this.translateWithOpenAI(text, apiKey, targetLanguage);
+    }
+
+    return String(text || '');
   }
 }
 

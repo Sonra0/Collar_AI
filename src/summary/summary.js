@@ -1,18 +1,44 @@
 import Chart from 'chart.js/auto';
 import storage from '../utils/storage.js';
+import { STORAGE_KEYS } from '../utils/constants.js';
+import {
+  DEFAULT_LANGUAGE,
+  getNextLanguage,
+  languageHtmlCode,
+  languageToggleAriaLabel,
+  languageToggleLabel,
+  resolveLanguage,
+  t,
+} from '../utils/i18n.js';
 
 const categories = ['posture', 'facial', 'hands', 'appearance'];
 let timelineChart = null;
 
 const elements = {
+  languageToggle: document.getElementById('language-toggle'),
+  heroEyebrow: document.getElementById('hero-eyebrow'),
+  heroTitle: document.getElementById('hero-title'),
+  heroSubtitle: document.getElementById('hero-subtitle'),
   loading: document.getElementById('loading'),
+  loadingText: document.getElementById('loading-text'),
   emptyState: document.getElementById('empty-state'),
+  emptyTitle: document.getElementById('empty-title'),
+  emptyBody: document.getElementById('empty-body'),
   summaryContent: document.getElementById('summary-content'),
+  durationLabel: document.getElementById('duration-label'),
+  analysesLabel: document.getElementById('analyses-label'),
+  overallLabel: document.getElementById('overall-label'),
   duration: document.getElementById('duration'),
   analysesCount: document.getElementById('analyses-count'),
   overallScore: document.getElementById('overall-score'),
+  categoryHeading: document.getElementById('category-heading'),
+  postureTitle: document.getElementById('posture-title'),
+  facialTitle: document.getElementById('facial-title'),
+  handsTitle: document.getElementById('hands-title'),
+  appearanceTitle: document.getElementById('appearance-title'),
+  timelineHeading: document.getElementById('timeline-heading'),
+  actionsHeading: document.getElementById('actions-heading'),
   actionItems: document.getElementById('action-items'),
-  heroSubtitle: document.getElementById('hero-subtitle'),
   exportPdf: document.getElementById('export-pdf'),
   copySummary: document.getElementById('copy-summary'),
   viewAllSessions: document.getElementById('view-all-sessions'),
@@ -20,6 +46,8 @@ const elements = {
 };
 
 let toastTimeout = null;
+let currentLanguage = DEFAULT_LANGUAGE;
+let latestRenderedSession = null;
 
 function showToast(message) {
   elements.toast.textContent = message;
@@ -35,6 +63,13 @@ function scoreClass(score) {
   if (score >= 8) return 'excellent';
   if (score >= 5) return 'warning';
   return 'critical';
+}
+
+function categoryLabel(category) {
+  if (category === 'posture') return t(currentLanguage, 'summary.categoryPosture');
+  if (category === 'facial') return t(currentLanguage, 'summary.categoryFacial');
+  if (category === 'hands') return t(currentLanguage, 'summary.categoryHands');
+  return t(currentLanguage, 'summary.categoryAppearance');
 }
 
 function parseAverage(session, category) {
@@ -59,8 +94,12 @@ function collectSummary(session) {
     const issues = session.analyses.map((entry) => entry[category]?.issue).filter(Boolean);
     const recs = session.analyses.map((entry) => entry[category]?.suggestion).filter(Boolean);
 
-    issueCount[category] = issues.length ? `${issues.length} issue${issues.length > 1 ? 's' : ''} observed` : 'Consistently strong';
-    recommendations[category] = recs[0] || 'Keep this category steady.';
+    issueCount[category] = issues.length
+      ? (issues.length === 1
+        ? t(currentLanguage, 'summary.issueObservedSingle')
+        : t(currentLanguage, 'summary.issueObservedPlural', { count: issues.length }))
+      : t(currentLanguage, 'summary.consistentlyStrong');
+    recommendations[category] = recs[0] || t(currentLanguage, 'summary.keepSteady');
   });
 
   const overall = Number(
@@ -78,8 +117,8 @@ function populateHeader(session, overall) {
   elements.analysesCount.textContent = String(session.analyses.length);
   elements.overallScore.textContent = `${overall}/10`;
   elements.heroSubtitle.textContent = overall >= 8
-    ? 'Strong meeting presence with minor tuning opportunities.'
-    : 'Focused adjustments can raise your next meeting impact.';
+    ? t(currentLanguage, 'summary.heroSubtitleStrong')
+    : t(currentLanguage, 'summary.heroSubtitleFocus');
 }
 
 function populateCategoryCards(summary) {
@@ -106,7 +145,7 @@ function createTimelineChart(session) {
     const seconds = Math.max(0, Math.round((entry.timestamp - session.startTime) / 1000));
     const mins = Math.floor(seconds / 60);
     const secs = String(seconds % 60).padStart(2, '0');
-    return mins === 0 && index === 0 ? 'Start' : `${mins}:${secs}`;
+    return mins === 0 && index === 0 ? t(currentLanguage, 'summary.timelineStart') : `${mins}:${secs}`;
   });
 
   const colors = {
@@ -117,7 +156,7 @@ function createTimelineChart(session) {
   };
 
   const datasets = categories.map((category) => ({
-    label: category.charAt(0).toUpperCase() + category.slice(1),
+    label: categoryLabel(category),
     data: session.analyses.map((entry) => Number(entry[category]?.score || 0)),
     borderColor: colors[category],
     backgroundColor: `${colors[category]}40`,
@@ -168,7 +207,7 @@ function generateActionItems(summary) {
 
   elements.actionItems.innerHTML = '';
   ranked.forEach(([category, score]) => {
-    const title = category.charAt(0).toUpperCase() + category.slice(1);
+    const title = categoryLabel(category);
     const li = document.createElement('li');
     const strong = document.createElement('strong');
     strong.textContent = title;
@@ -185,44 +224,129 @@ async function exportAsPdf() {
 async function copySummaryText() {
   const lines = Array.from(elements.actionItems.querySelectorAll('li')).map((li, index) => `${index + 1}. ${li.textContent}`);
   const text = [
-    'Meeting Body Language Summary',
-    `Duration: ${elements.duration.textContent}`,
-    `Analyses: ${elements.analysesCount.textContent}`,
-    `Overall: ${elements.overallScore.textContent}`,
+    t(currentLanguage, 'summary.copyTitle'),
+    `${t(currentLanguage, 'summary.copyDuration')}: ${elements.duration.textContent}`,
+    `${t(currentLanguage, 'summary.copyAnalyses')}: ${elements.analysesCount.textContent}`,
+    `${t(currentLanguage, 'summary.copyOverall')}: ${elements.overallScore.textContent}`,
     '',
-    'Top Action Items:',
+    t(currentLanguage, 'summary.copyActions'),
     ...lines,
   ].join('\n');
 
   try {
     await navigator.clipboard.writeText(text);
-    showToast('Summary copied to clipboard.');
+    showToast(t(currentLanguage, 'summary.toastCopied'));
   } catch {
-    showToast('Clipboard copy failed in this context.');
+    showToast(t(currentLanguage, 'summary.toastCopyFailed'));
   }
 }
 
 async function showSessionCount() {
   const sessions = await storage.getSessions();
-  showToast(`Total saved sessions: ${sessions.length}`);
+  showToast(t(currentLanguage, 'summary.toastSessionCount', { count: sessions.length }));
+}
+
+function showLoading(waitingForCurrent = false) {
+  elements.summaryContent.classList.add('hidden');
+  elements.emptyState.classList.add('hidden');
+  elements.loading.classList.remove('hidden');
+  elements.loadingText.textContent = waitingForCurrent
+    ? t(currentLanguage, 'summary.loadingCurrent')
+    : t(currentLanguage, 'summary.loadingLatest');
 }
 
 function showEmptyState() {
   elements.loading.classList.add('hidden');
+  elements.summaryContent.classList.add('hidden');
   elements.emptyState.classList.remove('hidden');
 }
 
 function showSummary() {
   elements.loading.classList.add('hidden');
+  elements.emptyState.classList.add('hidden');
   elements.summaryContent.classList.remove('hidden');
 }
 
-async function loadLatestSession() {
-  const summarySession = await storage.getSummarySession();
-  if (summarySession?.analyses?.length) {
-    await storage.clearSummarySession();
+function applyLanguage() {
+  document.documentElement.lang = languageHtmlCode(currentLanguage);
+  document.title = t(currentLanguage, 'summary.pageTitle');
 
+  elements.languageToggle.textContent = languageToggleLabel(currentLanguage);
+  elements.languageToggle.setAttribute('aria-label', languageToggleAriaLabel(currentLanguage));
+  elements.heroEyebrow.textContent = t(currentLanguage, 'summary.heroEyebrow');
+  elements.heroTitle.textContent = t(currentLanguage, 'summary.heroTitle');
+
+  elements.loadingText.textContent = t(currentLanguage, 'summary.loadingLatest');
+  elements.emptyTitle.textContent = t(currentLanguage, 'summary.emptyTitle');
+  elements.emptyBody.textContent = t(currentLanguage, 'summary.emptyBody');
+
+  elements.durationLabel.textContent = t(currentLanguage, 'summary.statDuration');
+  elements.analysesLabel.textContent = t(currentLanguage, 'summary.statAnalyses');
+  elements.overallLabel.textContent = t(currentLanguage, 'summary.statOverall');
+
+  elements.categoryHeading.textContent = t(currentLanguage, 'summary.sectionCategory');
+  elements.postureTitle.textContent = t(currentLanguage, 'summary.categoryPosture');
+  elements.facialTitle.textContent = t(currentLanguage, 'summary.categoryFacial');
+  elements.handsTitle.textContent = t(currentLanguage, 'summary.categoryHands');
+  elements.appearanceTitle.textContent = t(currentLanguage, 'summary.categoryAppearance');
+  elements.timelineHeading.textContent = t(currentLanguage, 'summary.sectionTimeline');
+  elements.actionsHeading.textContent = t(currentLanguage, 'summary.sectionActions');
+  const actionItemsLoading = document.getElementById('action-items-loading');
+  if (actionItemsLoading) {
+    actionItemsLoading.textContent = t(currentLanguage, 'summary.actionItemsLoading');
+  }
+
+  elements.exportPdf.textContent = t(currentLanguage, 'summary.btnExportPdf');
+  elements.copySummary.textContent = t(currentLanguage, 'summary.btnCopySummary');
+  elements.viewAllSessions.textContent = t(currentLanguage, 'summary.btnSessionCount');
+
+  if (!latestRenderedSession) {
+    elements.heroSubtitle.textContent = t(currentLanguage, 'summary.heroSubtitleFocus');
+  }
+}
+
+function getLatestCompletedSession(sessions) {
+  if (!Array.isArray(sessions)) {
+    return null;
+  }
+
+  for (let i = sessions.length - 1; i >= 0; i -= 1) {
+    const candidate = sessions[i];
+    if (candidate?.analyses?.length) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+async function refreshSummary() {
+  const [currentSession, summarySession, sessions] = await Promise.all([
+    storage.getCurrentSession(),
+    storage.getSummarySession(),
+    storage.getSessions(),
+  ]);
+
+  if (currentSession) {
+    if (!currentSession.analyses?.length) {
+      latestRenderedSession = null;
+      showLoading(true);
+      return;
+    }
+
+    const summary = collectSummary(currentSession);
+    latestRenderedSession = currentSession;
+    populateHeader(currentSession, summary.overall);
+    populateCategoryCards(summary);
+    createTimelineChart(currentSession);
+    generateActionItems(summary);
+    showSummary();
+    return;
+  }
+
+  if (summarySession?.analyses?.length) {
     const summary = collectSummary(summarySession);
+    latestRenderedSession = summarySession;
     populateHeader(summarySession, summary.overall);
     populateCategoryCards(summary);
     createTimelineChart(summarySession);
@@ -231,28 +355,72 @@ async function loadLatestSession() {
     return;
   }
 
-  const sessions = await storage.getSessions();
-  if (!sessions.length) {
+  const latestCompleted = getLatestCompletedSession(sessions);
+  if (!latestCompleted) {
+    latestRenderedSession = null;
     showEmptyState();
     return;
   }
 
-  const latest = sessions[sessions.length - 1];
-  if (!latest.analyses?.length) {
-    showEmptyState();
-    return;
-  }
-
-  const summary = collectSummary(latest);
-  populateHeader(latest, summary.overall);
+  const summary = collectSummary(latestCompleted);
+  latestRenderedSession = latestCompleted;
+  populateHeader(latestCompleted, summary.overall);
   populateCategoryCards(summary);
-  createTimelineChart(latest);
+  createTimelineChart(latestCompleted);
   generateActionItems(summary);
   showSummary();
+}
+
+async function toggleLanguage() {
+  currentLanguage = getNextLanguage(currentLanguage);
+  await storage.saveSettings({ language: currentLanguage });
+  applyLanguage();
+  await refreshSummary();
+}
+
+async function loadLanguage() {
+  const queryLanguage = new URLSearchParams(window.location.search).get('lang');
+  const settings = await storage.getSettings();
+  currentLanguage = queryLanguage ? resolveLanguage(queryLanguage) : resolveLanguage(settings.language);
+
+  if (queryLanguage && currentLanguage !== resolveLanguage(settings.language)) {
+    await storage.saveSettings({ language: currentLanguage });
+  }
+
+  applyLanguage();
 }
 
 elements.exportPdf.addEventListener('click', exportAsPdf);
 elements.copySummary.addEventListener('click', copySummaryText);
 elements.viewAllSessions.addEventListener('click', showSessionCount);
+elements.languageToggle.addEventListener('click', toggleLanguage);
 
-loadLatestSession();
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== 'local') {
+    return;
+  }
+
+  if (
+    changes[STORAGE_KEYS.CURRENT_SESSION]
+    || changes[STORAGE_KEYS.SUMMARY_SESSION]
+    || changes[STORAGE_KEYS.SESSIONS]
+  ) {
+    void refreshSummary();
+  }
+
+  if (changes[STORAGE_KEYS.SETTINGS]?.newValue) {
+    const nextLanguage = resolveLanguage(changes[STORAGE_KEYS.SETTINGS].newValue.language);
+    if (nextLanguage !== currentLanguage) {
+      currentLanguage = nextLanguage;
+      applyLanguage();
+      void refreshSummary();
+    }
+  }
+});
+
+(async function init() {
+  await loadLanguage();
+  showLoading();
+  await refreshSummary();
+  setInterval(refreshSummary, 5000);
+})();
