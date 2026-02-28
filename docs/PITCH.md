@@ -1,4 +1,4 @@
-# Meeting Body Language Coach - Pitch
+# CollarAI - Pitch
 
 ## Problem (30 sec)
 

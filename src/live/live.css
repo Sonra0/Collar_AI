@@ -27,8 +27,8 @@ body {
 }
 
 .shell {
-  padding: 16px;
-  max-width: 440px;
+  padding: 14px;
+  max-width: 880px;
   margin: 0 auto;
 }
 
@@ -214,4 +214,32 @@ h1 {
   font-size: 12px;
   line-height: 1.45;
   color: #d4e5ff;
+}
+
+@media (max-width: 400px) {
+  .shell {
+    padding: 10px;
+  }
+
+  .hero {
+    padding: 12px;
+    margin-bottom: 8px;
+  }
+
+  h1 {
+    font-size: 20px;
+  }
+
+  .toolbar {
+    padding: 10px;
+    margin-bottom: 8px;
+  }
+
+  .feed {
+    padding: 6px;
+  }
+
+  .feed-item {
+    padding: 8px;
+  }
 }

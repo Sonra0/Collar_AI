@@ -38,6 +38,7 @@ const elements = {
   saveSettings: document.getElementById('save-settings'),
   monitoringToggle: document.getElementById('monitoring-toggle'),
   liveCoaching: document.getElementById('live-coaching'),
+  popOutCoaching: document.getElementById('pop-out-coaching'),
   viewHistory: document.getElementById('view-history'),
   clearData: document.getElementById('clear-data'),
   providerPill: document.getElementById('provider-pill'),
@@ -307,9 +308,31 @@ function viewHistory() {
   });
 }
 
-function openLiveCoaching() {
+async function openLiveCoaching() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab?.id) {
+      await chrome.sidePanel.open({ tabId: tab.id });
+    }
+  } catch {
+    // Fallback: open as tab if side panel unavailable
+    const url = chrome.runtime.getURL(`live/live.html?lang=${encodeURIComponent(currentLanguage)}`);
+    chrome.tabs.create({ url });
+  }
+}
+
+function popOutLiveCoaching() {
   const url = chrome.runtime.getURL(`live/live.html?lang=${encodeURIComponent(currentLanguage)}`);
-  window.location.href = url;
+  try {
+    chrome.windows.create({
+      url,
+      type: 'popup',
+      width: 460,
+      height: 760,
+    });
+  } catch {
+    chrome.tabs.create({ url });
+  }
 }
 
 async function clearAllData() {
@@ -334,6 +357,9 @@ elements.saveSettings.addEventListener('click', saveSettings);
 elements.validateKey.addEventListener('click', validateApiKey);
 elements.monitoringToggle.addEventListener('click', toggleMonitoring);
 elements.liveCoaching.addEventListener('click', openLiveCoaching);
+if (elements.popOutCoaching) {
+  elements.popOutCoaching.addEventListener('click', popOutLiveCoaching);
+}
 elements.viewHistory.addEventListener('click', viewHistory);
 elements.clearData.addEventListener('click', clearAllData);
 elements.languageToggle.addEventListener('click', toggleLanguage);

@@ -1,6 +1,6 @@
-# Meeting Body Language Coach
+# CollarAI
 
-Real-time body language feedback for Google Meet video calls using AI vision analysis.
+Real-time body language feedback for video calls using AI vision analysis. Works with Google Meet, Zoom, Microsoft Teams, Slack, Discord, and Webex.
 
 ## Features
 
@@ -56,7 +56,7 @@ npm run build
 
 ## Usage
 
-1. Join a Google Meet call with your camera enabled.
+1. Join a video call on any supported platform (Google Meet, Zoom, Teams, Slack, Discord, or Webex) with your camera enabled.
 2. Extension auto-starts monitoring when self video is detected.
 3. You receive live notifications based on configured sensitivity.
 4. When meeting ends, summary page opens automatically.
@@ -76,7 +76,7 @@ npm run format
 ```text
 src/
   background/   service worker: analysis + notifications + sessions
-  content/      Google Meet capture + lifecycle detection
+  content/      video capture + platform detection
   popup/        settings/status UI
   summary/      post-meeting report UI + chart
   utils/        constants, API client, storage wrapper
@@ -90,8 +90,8 @@ src/
 - Keep it running while the extension is active.
 
 ### Extension not detecting meeting video
-- Confirm camera is enabled in Google Meet.
-- If the extension was installed while Meet was already open, wait a few seconds or open the popup once; the service worker now auto-attaches the content script to existing Meet tabs.
+- Confirm camera is enabled in your video call platform.
+- If the extension was installed while a meeting was already open, wait a few seconds or open the popup once; the service worker now auto-attaches the content script to existing tabs.
 - If detection still does not start, refresh the meeting tab.
 - Check content script console logs in DevTools.
 
