@@ -29,6 +29,8 @@ let lastMeetBootstrapAttempt = 0;
 let meetBootstrapInFlight = null;
 const MEET_BOOTSTRAP_COOLDOWN_MS = 15000;
 const POSITIVE_FEEDBACK_COOLDOWN_MS = 180000;
+const SUGGESTION_DEDUP_COOLDOWN_MS = 300000; // 5 minutes before repeating same suggestion
+let recentSuggestions = new Map(); // message text -> last shown timestamp
 
 async function queryMeetTabs() {
   return new Promise((resolve) => {
@@ -662,6 +664,7 @@ async function handleMeetingStarted(message, sender) {
   analysisRuntime = createAnalysisRuntime();
   consecutiveWarnings = createWarningTracker();
   lastPositiveFeedbackTime = 0;
+  recentSuggestions = new Map();
   await storage.saveCurrentSession(currentSession);
   await appendLiveCoachingItem({
     id: `meeting-start-${message.timestamp}`,
@@ -678,6 +681,21 @@ async function handleMeetingStarted(message, sender) {
   await openSidePanel(sender?.tab?.id);
 
   console.log('Meeting started:', currentSession.id);
+}
+
+function isDuplicateSuggestion(message) {
+  const now = Date.now();
+  const key = message.toLowerCase().trim();
+  const lastShown = recentSuggestions.get(key);
+  if (lastShown && now - lastShown < SUGGESTION_DEDUP_COOLDOWN_MS) {
+    return true;
+  }
+  recentSuggestions.set(key, now);
+  // Prune old entries
+  for (const [k, t] of recentSuggestions) {
+    if (now - t > SUGGESTION_DEDUP_COOLDOWN_MS) recentSuggestions.delete(k);
+  }
+  return false;
 }
 
 async function checkForIssues(analysis, settings) {
@@ -720,6 +738,9 @@ async function checkForIssues(analysis, settings) {
     const message = suggestions.length
       ? suggestions.join('; ')
       : bgText('criticalFallback', sourceLanguage);
+
+    if (isDuplicateSuggestion(message)) return;
+
     const messageByLanguage = await buildBilingualTextMap(message, sourceLanguage, settings);
     const titleByLanguage = buildStaticLanguageMap('criticalTitle');
     const localizedTitle = titleByLanguage[sourceLanguage] || titleByLanguage[LANG_EN];
@@ -757,6 +778,9 @@ async function checkForIssues(analysis, settings) {
     const message = suggestions.length
       ? suggestions.join('; ')
       : bgText('warningFallback', sourceLanguage);
+
+    if (isDuplicateSuggestion(message)) return;
+
     const messageByLanguage = await buildBilingualTextMap(message, sourceLanguage, settings);
     const titleByLanguage = buildStaticLanguageMap('warningTitle');
     const localizedTitle = titleByLanguage[sourceLanguage] || titleByLanguage[LANG_EN];
@@ -1004,6 +1028,7 @@ async function handleMeetingEnded(message) {
   currentSession = null;
   consecutiveWarnings = createWarningTracker();
   lastPositiveFeedbackTime = 0;
+  recentSuggestions = new Map();
   await appendLiveCoachingItem({
     id: `meeting-end-${endedAt}`,
     sourceLanguage: language,
