@@ -1,7 +1,7 @@
 {
-  "name": "meeting-body-language-coach",
+  "name": "collar-ai",
   "version": "1.0.0",
-  "description": "Chrome extension for real-time body language feedback during Google Meet calls.",
+  "description": "Chrome extension for real-time body language feedback during video calls.",
   "private": true,
   "scripts": {
     "build": "webpack --mode production",

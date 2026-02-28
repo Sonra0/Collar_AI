@@ -203,8 +203,8 @@ const BG_TEXT = {
     [LANG_FR]: 'Surveillance activee',
   },
   monitoringOnMessage: {
-    [LANG_EN]: 'Open Google Meet to resume live coaching.',
-    [LANG_FR]: 'Ouvrez Google Meet pour reprendre le coaching en direct.',
+    [LANG_EN]: 'Open a video meeting to resume live coaching.',
+    [LANG_FR]: 'Ouvrez une reunion video pour reprendre le coaching en direct.',
   },
   meetingEndedTitle: {
     [LANG_EN]: 'Meeting Ended',
@@ -629,7 +629,17 @@ async function applyDataRetention(retentionDays) {
   }
 }
 
-async function handleMeetingStarted(message) {
+async function openSidePanel(tabId) {
+  try {
+    if (chrome.sidePanel && tabId) {
+      await chrome.sidePanel.open({ tabId });
+    }
+  } catch (error) {
+    console.warn('Could not open side panel:', error);
+  }
+}
+
+async function handleMeetingStarted(message, sender) {
   if (currentSession) {
     return;
   }
@@ -664,6 +674,8 @@ async function handleMeetingStarted(message) {
     timestamp: message.timestamp,
     delivery: 'in-app',
   }, settings);
+
+  await openSidePanel(sender?.tab?.id);
 
   console.log('Meeting started:', currentSession.id);
 }
@@ -1040,13 +1052,13 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   }
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   (async () => {
     await restoreSession();
     try {
       switch (message.type) {
         case 'MEETING_STARTED':
-          await handleMeetingStarted(message);
+          await handleMeetingStarted(message, sender);
           sendResponse({ ok: true });
           return;
         case 'ANALYZE_FRAME':
@@ -1096,4 +1108,4 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-console.log('Meeting Body Language Coach: background worker loaded');
+console.log('CollarAI: background worker loaded');
